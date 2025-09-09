@@ -1,0 +1,444 @@
+﻿<Window x:Class="FireAlarmCircuitAnalysis.Views.FireAlarmCircuitWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Fire Alarm Circuit Analysis" 
+        Height="850" Width="1400"
+        WindowStartupLocation="CenterScreen"
+        Background="#F5F6FA">
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="../Resources/Styles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Local Styles -->
+            <Style x:Key="StatusIndicator" TargetType="TextBlock">
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=Text}" Value="🟢 OK">
+                        <Setter Property="Foreground" Value="#27AE60"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=Text}" Value="🟡 NEAR LIMIT">
+                        <Setter Property="Foreground" Value="#F39C12"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=Text}" Value="🔴 EXCEEDS">
+                        <Setter Property="Foreground" Value="#E74C3C"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{StaticResource PrimaryBrush}" Padding="15">
+            <Grid>
+                <TextBlock Text="FIRE ALARM CIRCUIT ANALYSIS" 
+                          FontSize="24" FontWeight="Bold" 
+                          Foreground="White" HorizontalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBlock Text="v1.0.0" Foreground="White" 
+                              VerticalAlignment="Center" Margin="0,0,10,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Parameters Panel -->
+        <Border Grid.Row="1" Background="White" BorderBrush="#BDC3C7" 
+                BorderThickness="0,0,0,1" Padding="15">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="200"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- System Parameters -->
+                <GroupBox Grid.Column="0" Header="SYSTEM PARAMETERS" 
+                         Style="{StaticResource ModernGroupBox}">
+                    <Grid Margin="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="120"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="30"/>
+                            <RowDefinition Height="30"/>
+                            <RowDefinition Height="30"/>
+                            <RowDefinition Height="30"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="System Voltage:" 
+                                  VerticalAlignment="Center"/>
+                        <ComboBox Grid.Row="0" Grid.Column="1" Name="cmbVoltage" 
+                                 SelectedIndex="0" Style="{StaticResource ModernComboBox}">
+                            <ComboBoxItem>29 VDC (Filtered)</ComboBoxItem>
+                            <ComboBoxItem>24 VDC (Nominal)</ComboBoxItem>
+                        </ComboBox>
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Min Voltage (VDC):" 
+                                  VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="1" Grid.Column="1" Name="txtMinVoltage" 
+                                Text="16.0" Style="{StaticResource ModernTextBox}"/>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Wire Gauge:" 
+                                  VerticalAlignment="Center"/>
+                        <ComboBox Grid.Row="2" Grid.Column="1" Name="cmbWireGauge" 
+                                 SelectedIndex="1" Style="{StaticResource ModernComboBox}">
+                            <ComboBoxItem>18 AWG</ComboBoxItem>
+                            <ComboBoxItem>16 AWG</ComboBoxItem>
+                            <ComboBoxItem>14 AWG</ComboBoxItem>
+                            <ComboBoxItem>12 AWG</ComboBoxItem>
+                            <ComboBoxItem>10 AWG</ComboBoxItem>
+                            <ComboBoxItem>8 AWG</ComboBoxItem>
+                        </ComboBox>
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Supply Distance (ft):" 
+                                  VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="3" Grid.Column="1" Name="txtSupplyDistance" 
+                                Text="50" Style="{StaticResource ModernTextBox}"/>
+                    </Grid>
+                </GroupBox>
+
+                <!-- Load Parameters -->
+                <GroupBox Grid.Column="1" Header="LOAD PARAMETERS" 
+                         Style="{StaticResource ModernGroupBox}">
+                    <Grid Margin="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="120"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="30"/>
+                            <RowDefinition Height="30"/>
+                            <RowDefinition Height="30"/>
+                            <RowDefinition Height="30"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Max Load (A):" 
+                                  VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="0" Grid.Column="1" Name="txtMaxLoad" 
+                                Text="3.0" Style="{StaticResource ModernTextBox}"/>
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Reserved (%):" 
+                                  VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="1" Grid.Column="1" Name="txtReservedPercent" 
+                                Text="20" Style="{StaticResource ModernTextBox}"/>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Usable Load (A):" 
+                                  VerticalAlignment="Center" FontWeight="Bold"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Name="lblUsableLoad" 
+                                  Text="2.40" FontWeight="Bold" Foreground="#27AE60"
+                                  VerticalAlignment="Center"/>
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Max Voltage Drop:" 
+                                  VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="3" Grid.Column="1" Name="lblMaxDrop" 
+                                  Text="13.0 V" Foreground="#E74C3C"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+                </GroupBox>
+
+
+                <!-- Control Buttons -->
+                <StackPanel Grid.Column="2" Margin="10" VerticalAlignment="Center">
+                    <Button Name="btnStartSelection" Content="START SELECTION" 
+                           Height="35" Style="{StaticResource PrimaryButton}"
+                           Click="BtnStartSelection_Click"
+                           ToolTip="Begin selecting fire alarm devices (Ctrl+S)"/>
+                    <Button Name="btnCreateTTap" Content="CREATE T-TAP" 
+                           Height="35" Style="{StaticResource InfoButton}"
+                           IsEnabled="False" Click="BtnCreateTTap_Click"
+                           ToolTip="Create a T-tap branch from selected device (or SHIFT+Click device in model)"/>
+                    <Button Name="btnCreateWires" Content="CREATE WIRES" 
+                           Height="35" Style="{StaticResource SuccessButton}"
+                           IsEnabled="False" Click="BtnCreateWires_Click"
+                           ToolTip="Generate wires for the circuit (Ctrl+W)"/>
+                    <Button Name="btnClearCircuit" Content="CLEAR ALL" 
+                           Height="35" Style="{StaticResource DangerButton}"
+                           Click="BtnClearCircuit_Click"
+                           ToolTip="Clear all circuit data (Ctrl+Shift+C)"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main Content Area -->
+        <Grid Grid.Row="2" Margin="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="400"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Combined Circuit Layout and Device List -->
+            <Border Grid.Column="0" Background="White" Margin="0,0,5,0" 
+                   BorderBrush="#BDC3C7" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="35"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header with Toggle -->
+                    <Border Grid.Row="0" Background="#34495E" Padding="5">
+                        <Grid>
+                            <TextBlock Text="CIRCUIT LAYOUT &amp; DEVICES" Foreground="White" 
+                                      FontWeight="Bold" HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="Tree View" Name="btnTreeView" Click="BtnToggleView_Click"
+                                       Margin="2" Padding="8,2" Background="#2C3E50"
+                                       Foreground="White" BorderThickness="1" BorderBrush="White"/>
+                                <Button Content="List View" Name="btnListView" Click="BtnToggleView_Click"
+                                       Margin="2" Padding="8,2" Background="Transparent"
+                                       Foreground="White" BorderThickness="1" BorderBrush="White"/>
+                                <Separator Background="White" Width="1" Margin="5,2"/>
+                                <Button Content="Expand All" Click="BtnExpandAll_Click"
+                                       Margin="2" Padding="5,2" Background="Transparent"
+                                       Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                <Button Content="Collapse All" Click="BtnCollapseAll_Click"
+                                       Margin="2" Padding="5,2" Background="Transparent"
+                                       Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Combined View Area -->
+                    <Grid Grid.Row="1">
+                        <!-- Tree View -->
+                        <ScrollViewer Name="svTreeView" VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto" Visibility="Visible">
+                            <TreeView Name="tvCircuit" Margin="10" FontFamily="Consolas" FontSize="12">
+                                <TreeView.ItemContainerStyle>
+                                    <Style TargetType="TreeViewItem">
+                                        <Setter Property="IsExpanded" Value="True"/>
+                                    </Style>
+                                </TreeView.ItemContainerStyle>
+                            </TreeView>
+                        </ScrollViewer>
+
+                        <!-- List View -->
+                        <DataGrid Name="dgDevices" AutoGenerateColumns="False" 
+                                 CanUserAddRows="False" Margin="10" FontSize="11"
+                                 SelectionMode="Single" GridLinesVisibility="Horizontal"
+                                 AlternatingRowBackground="#F8F9FA" Visibility="Collapsed">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="#" Binding="{Binding Position}" 
+                                                  Width="50" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Device Name" Binding="{Binding Name}" 
+                                                  Width="*" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Current" Binding="{Binding Current}" 
+                                                  Width="80" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Voltage" Binding="{Binding Voltage}" 
+                                                  Width="80" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Status" Binding="{Binding Status}" 
+                                                  Width="60" IsReadOnly="True"/>
+                            </DataGrid.Columns>
+                            <DataGrid.RowStyle>
+                                <Style TargetType="DataGridRow">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Status}" Value="✗">
+                                            <Setter Property="Background" Value="#FFE5E5"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Status}" Value="⚠️ LOW">
+                                            <Setter Property="Background" Value="#FFCCCC"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Status}" Value="⚠️">
+                                            <Setter Property="Background" Value="#FFF5CC"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.RowStyle>
+                        </DataGrid>
+                    </Grid>
+
+                    <!-- Actions Panel -->
+                    <Border Grid.Row="2" Background="#ECF0F1" Padding="5">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Button Content="Save Circuit" Margin="2" Padding="8,3"
+                                   Click="BtnSaveCircuit_Click" IsEnabled="False" Name="btnSaveCircuit"
+                                   ToolTip="Save current circuit configuration"/>
+                            <Button Content="Load Circuit" Margin="2" Padding="8,3"
+                                   Click="BtnLoadCircuit_Click" Name="btnLoadCircuit"
+                                   ToolTip="Load saved circuit configuration"/>
+                            <Button Content="Validate" Margin="2" Padding="8,3"
+                                   Click="BtnValidate_Click" IsEnabled="False" Name="btnValidate"
+                                   ToolTip="Validate circuit against NFPA 72"/>
+                            <Button Content="Export" Margin="2" Padding="8,3"
+                                   Click="BtnExport_Click" IsEnabled="False" Name="btnExport"
+                                   ToolTip="Export circuit report"/>
+                            <Button Content="Remove Selected" Margin="2" Padding="8,3"
+                                   Click="BtnRemoveDevice_Click" IsEnabled="False" Name="btnRemoveDevice"
+                                   ToolTip="Remove selected device"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- Right Panel - Combined Analysis and Summary -->
+            <Border Grid.Column="1" Background="White" BorderBrush="#BDC3C7" BorderThickness="1" Margin="5,0,0,0">
+                <Grid Margin="15">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Header -->
+                    <TextBlock Grid.Row="0" Text="CIRCUIT ANALYSIS &amp; SUMMARY" FontWeight="Bold" 
+                              Margin="0,0,0,15" FontSize="16" HorizontalAlignment="Center"/>
+
+                    <!-- Live Analysis Values -->
+                    <StackPanel Grid.Row="1" Margin="15">
+                        
+                        <!-- Load Information -->
+                        <Border Background="#F8F9FA" BorderBrush="#DEE2E6" BorderThickness="1" 
+                               CornerRadius="5" Padding="12" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="ALARM LOAD" FontSize="10" FontWeight="Bold" 
+                                              Foreground="#6C757D" Margin="0,0,0,5"/>
+                                    <TextBlock Name="lblAnalysisAlarmLoad" Text="0.000 A" FontWeight="Bold" 
+                                              FontSize="16"/>
+                                </StackPanel>
+                                
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="STANDBY LOAD" FontSize="10" FontWeight="Bold" 
+                                              Foreground="#6C757D" Margin="0,0,0,5"/>
+                                    <TextBlock Name="lblAnalysisStandbyLoad" Text="0.000 A" FontWeight="Bold" 
+                                              FontSize="16"/>
+                                </StackPanel>
+                                
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="UTILIZATION" FontSize="10" FontWeight="Bold" 
+                                              Foreground="#6C757D" Margin="0,0,0,5"/>
+                                    <TextBlock Name="lblAnalysisUtilization" Text="0%" FontWeight="Bold" 
+                                              FontSize="16"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        
+                        <!-- Voltage Information -->
+                        <Border Background="#F8F9FA" BorderBrush="#DEE2E6" BorderThickness="1" 
+                               CornerRadius="5" Padding="12" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="VOLTAGE DROP" FontSize="10" FontWeight="Bold" 
+                                              Foreground="#6C757D" Margin="0,0,0,5"/>
+                                    <TextBlock Name="lblAnalysisVoltageDrop" Text="0.0 V" FontWeight="Bold" 
+                                              FontSize="16"/>
+                                </StackPanel>
+                                
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="DROP PERCENTAGE" FontSize="10" FontWeight="Bold" 
+                                              Foreground="#6C757D" Margin="0,0,0,5"/>
+                                    <TextBlock Name="lblAnalysisDropPercentage" Text="0.0%" FontWeight="Bold" 
+                                              FontSize="16"/>
+                                </StackPanel>
+                                
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="EOL VOLTAGE" FontSize="10" FontWeight="Bold" 
+                                              Foreground="#6C757D" Margin="0,0,0,5"/>
+                                    <TextBlock Name="lblAnalysisEOLVoltage" Text="29.0 V" FontWeight="Bold" 
+                                              FontSize="16"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        
+                        <!-- Circuit Information -->
+                        <Border Background="#F8F9FA" BorderBrush="#DEE2E6" BorderThickness="1" 
+                               CornerRadius="5" Padding="12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="TOTAL LENGTH" FontSize="10" FontWeight="Bold" 
+                                              Foreground="#6C757D" Margin="0,0,0,5"/>
+                                    <TextBlock Name="lblAnalysisTotalLength" Text="0.0 ft" FontWeight="Bold" 
+                                              FontSize="16"/>
+                                </StackPanel>
+                                
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="TOTAL DEVICES" FontSize="10" FontWeight="Bold" 
+                                              Foreground="#6C757D" Margin="0,0,0,5"/>
+                                    <TextBlock Name="lblAnalysisTotalDevices" Text="0" FontWeight="Bold" 
+                                              FontSize="16"/>
+                                </StackPanel>
+                                
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="T-TAPS" FontSize="10" FontWeight="Bold" 
+                                              Foreground="#6C757D" Margin="0,0,0,5"/>
+                                    <TextBlock Name="lblAnalysisTTaps" Text="0" FontWeight="Bold" 
+                                              FontSize="16"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        
+                    </StackPanel>
+
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <StatusBar Grid.Row="3" Background="#2C3E50">
+            <StatusBarItem>
+                <TextBlock Name="lblStatusMessage" Text="Ready to start circuit analysis" 
+                          Foreground="White"/>
+            </StatusBarItem>
+            <Separator/>
+            <StatusBarItem>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Devices: " Foreground="White"/>
+                    <TextBlock Name="lblStatusDeviceCount" Text="0" 
+                              Foreground="#3498DB" FontWeight="Bold"/>
+                </StackPanel>
+            </StatusBarItem>
+            <Separator/>
+            <StatusBarItem>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Load: " Foreground="White"/>
+                    <TextBlock Name="lblStatusLoad" Text="0.000A" 
+                              Foreground="#3498DB" FontWeight="Bold"/>
+                </StackPanel>
+            </StatusBarItem>
+            <Separator/>
+            <StatusBarItem HorizontalAlignment="Right">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Mode: " Foreground="White"/>
+                    <TextBlock Name="lblMode" Text="IDLE" 
+                              Foreground="#3498DB" FontWeight="Bold"/>
+                </StackPanel>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</Window>

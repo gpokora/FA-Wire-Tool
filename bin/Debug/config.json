@@ -1,0 +1,222 @@
+{
+  "PluginInfo": {
+    "Name": "Fire Alarm Circuit Analysis",
+    "Version": "1.0.0",
+    "Author": "Fire Alarm Circuit Wizard",
+    "Description": "Interactive fire alarm circuit analysis tool with T-tap support",
+    "MinRevitVersion": "2021",
+    "MaxRevitVersion": "2025",
+    "Build": "Release",
+    "Copyright": "Copyright © 2024 Fire Alarm Circuit Wizard"
+  },
+
+  "DefaultParameters": {
+    "SystemVoltage": 29.0,
+    "MinVoltage": 16.0,
+    "MaxLoad": 3.0,
+    "ReservedPercent": 20,
+    "WireGauge": "16 AWG",
+    "SupplyDistance": 50.0,
+    "RoutingOverhead": 1.15,
+    "DefaultWireType": "Fire Alarm Circuit"
+  },
+
+  "WireResistance": {
+    "18 AWG": 6.385,
+    "16 AWG": 4.016,
+    "14 AWG": 2.525,
+    "12 AWG": 1.588,
+    "10 AWG": 0.999,
+    "8 AWG": 0.628
+  },
+
+  "VoltagePresets": [
+    {
+      "Name": "29 VDC (Filtered)",
+      "SystemVoltage": 29.0,
+      "MinVoltage": 16.0
+    },
+    {
+      "Name": "24 VDC (Nominal)",
+      "SystemVoltage": 24.0,
+      "MinVoltage": 16.0
+    },
+    {
+      "Name": "12 VDC System",
+      "SystemVoltage": 12.0,
+      "MinVoltage": 10.2
+    }
+  ],
+
+  "LoadPresets": [
+    {
+      "Name": "Standard NAC Circuit",
+      "MaxLoad": 3.0,
+      "ReservedPercent": 20
+    },
+    {
+      "Name": "Initiating Device Circuit",
+      "MaxLoad": 1.0,
+      "ReservedPercent": 25
+    },
+    {
+      "Name": "High Power NAC",
+      "MaxLoad": 5.0,
+      "ReservedPercent": 15
+    },
+    {
+      "Name": "Voice Evacuation",
+      "MaxLoad": 2.0,
+      "ReservedPercent": 30
+    }
+  ],
+
+  "UI": {
+    "WindowWidth": 1400,
+    "WindowHeight": 850,
+    "ShowWelcomeDialog": true,
+    "AutoExpandTreeView": true,
+    "EnableToolTips": true,
+    "ShowStatusBar": true,
+    "TreeViewFontSize": 12,
+    "GridFontSize": 11,
+    "ThemeColor": "#2C3E50",
+    "AccentColor": "#3498DB",
+    "SuccessColor": "#27AE60",
+    "WarningColor": "#F39C12",
+    "ErrorColor": "#E74C3C",
+    "InfoColor": "#9B59B6"
+  },
+
+  "Validation": {
+    "EnableNFPA72Compliance": true,
+    "MaxVoltageDropPercent": 10,
+    "MinEndOfLineVoltage": 16.0,
+    "MaxCircuitLength": 3000,
+    "RequireGroundFault": false,
+    "RequireSupervision": true,
+    "AllowBranchCircuits": true,
+    "MaxBranchesPerDevice": 4,
+    "MaxDevicesPerBranch": 10
+  },
+
+  "Graphics": {
+    "SelectedDeviceHalftone": true,
+    "BranchDeviceColor": {
+      "R": 255,
+      "G": 128,
+      "B": 0
+    },
+    "MainCircuitColor": {
+      "R": 0,
+      "G": 128,
+      "B": 255
+    },
+    "WireArcOffset": 2.0,
+    "ShowWireAnnotations": false,
+    "ShowDeviceLabels": true,
+    "HighlightOverloaded": true,
+    "OverloadColor": {
+      "R": 255,
+      "G": 0,
+      "B": 0
+    }
+  },
+
+  "Export": {
+    "DefaultExportPath": "",
+    "ExportFormats": [ "CSV", "Excel", "PDF", "JSON" ],
+    "IncludeCalculations": true,
+    "IncludeDeviceDetails": true,
+    "IncludeWireLengths": true,
+    "IncludeVoltageDrops": true,
+    "DateFormat": "yyyy-MM-dd",
+    "TimeFormat": "HH:mm:ss",
+    "DecimalPlaces": 3,
+    "CreateBackup": true
+  },
+
+  "Shortcuts": {
+    "StartSelection": "Ctrl+S",
+    "CreateTTap": "Shift+T",
+    "CreateWires": "Ctrl+W",
+    "ClearCircuit": "Ctrl+Shift+C",
+    "ExportReport": "Ctrl+E",
+    "RefreshDisplay": "F5",
+    "ValidateCircuit": "F7",
+    "ShowHelp": "F1"
+  },
+
+  "Advanced": {
+    "EnableDebugMode": false,
+    "LogLevel": "Info",
+    "LogToFile": true,
+    "LogFilePath": "FireAlarmCircuit.log",
+    "MaxLogSize": 10485760,
+    "MaxDevicesPerCircuit": 100,
+    "MaxBranchesPerDevice": 10,
+    "EnableAutoSave": true,
+    "AutoSaveInterval": 300,
+    "CacheCalculations": true,
+    "EnableParallelProcessing": false,
+    "ShowPerformanceMetrics": false
+  },
+
+  "DeviceDefaults": {
+    "DefaultAlarmCurrent": 0.055,
+    "DefaultStandbyCurrent": 0.0,
+    "CurrentParameterNames": [
+      "ALARM_CURRENT",
+      "CURRENT_ALARM",
+      "ALARM CURRENT",
+      "CURRENT DRAW",
+      "DEVICE_CURRENT",
+      "ALARM_DRAW",
+      "OPERATING_CURRENT"
+    ],
+    "AutoDetectCurrent": true,
+    "UseTypeParameters": true,
+    "CurrentUnit": "Amperes"
+  },
+
+  "RecentProjects": [],
+
+  "Templates": [
+    {
+      "Name": "Default Template",
+      "Description": "Standard fire alarm circuit configuration",
+      "Parameters": {
+        "SystemVoltage": 29.0,
+        "MinVoltage": 16.0,
+        "MaxLoad": 3.0,
+        "ReservedPercent": 20,
+        "WireGauge": "16 AWG",
+        "SupplyDistance": 50.0
+      }
+    },
+    {
+      "Name": "High Rise Template",
+      "Description": "Configuration for high-rise buildings",
+      "Parameters": {
+        "SystemVoltage": 29.0,
+        "MinVoltage": 16.0,
+        "MaxLoad": 5.0,
+        "ReservedPercent": 25,
+        "WireGauge": "12 AWG",
+        "SupplyDistance": 100.0
+      }
+    },
+    {
+      "Name": "Small Building Template",
+      "Description": "Configuration for small commercial buildings",
+      "Parameters": {
+        "SystemVoltage": 24.0,
+        "MinVoltage": 16.0,
+        "MaxLoad": 2.0,
+        "ReservedPercent": 15,
+        "WireGauge": "18 AWG",
+        "SupplyDistance": 25.0
+      }
+    }
+  ]
+}

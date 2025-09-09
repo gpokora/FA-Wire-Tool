@@ -1,0 +1,10 @@
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\net5.0-windows\WpfApp1.csproj.AssemblyReference.cache
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\net5.0-windows\FireAlarmCircuitWindow.baml
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\net5.0-windows\FireAlarmCircuitWindow.g.cs
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\net5.0-windows\App.g.cs
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\net5.0-windows\WpfApp1_MarkupCompile.cache
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\net5.0-windows\WpfApp1.g.resources
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\net5.0-windows\WpfApp1.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\net5.0-windows\WpfApp1.AssemblyInfoInputs.cache
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\net5.0-windows\WpfApp1.AssemblyInfo.cs
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\net5.0-windows\WpfApp1.csproj.CoreCompileInputs.cache

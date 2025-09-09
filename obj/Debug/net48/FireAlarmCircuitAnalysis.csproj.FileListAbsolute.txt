@@ -1,0 +1,1 @@
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\net48\FireAlarmCircuitAnalysis.csproj.AssemblyReference.cache
