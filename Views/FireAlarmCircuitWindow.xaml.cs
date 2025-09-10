@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -20,8 +20,8 @@ namespace FireAlarmCircuitAnalysis.Views
         public CircuitManager circuitManager;
         private DispatcherTimer updateTimer;
         public bool isSelecting = false;
-        private SelectionEventHandler selectionHandler;
-        private ExternalEvent selectionEvent;
+        public SelectionEventHandler selectionHandler;
+        public ExternalEvent selectionEvent;
         
         // Additional event handlers for thread-safe Revit API operations
         private CreateWiresEventHandler createWiresHandler;
@@ -47,28 +47,38 @@ namespace FireAlarmCircuitAnalysis.Views
         // Override graphics for visual feedback
         private OverrideGraphicSettings selectedOverride;
         private OverrideGraphicSettings branchOverride;
+        
+        // Device processing queue - SDK pattern
+        private Queue<(Element element, bool shiftPressed)> deviceQueue = new Queue<(Element, bool)>();
+        private readonly object queueLock = new object();
 
-        public FireAlarmCircuitWindow()
+        public FireAlarmCircuitWindow(
+            SelectionEventHandler selectionHandler, ExternalEvent selectionEvent,
+            CreateWiresEventHandler createWiresHandler, ExternalEvent createWiresEvent,
+            RemoveDeviceEventHandler removeDeviceHandler, ExternalEvent removeDeviceEvent,
+            ClearCircuitEventHandler clearCircuitHandler, ExternalEvent clearCircuitEvent,
+            InitializationEventHandler initializationHandler, ExternalEvent initializationEvent)
         {
             InitializeComponent();
 
-            // Initialize selection handler
-            selectionHandler = new SelectionEventHandler { Window = this };
-            selectionEvent = ExternalEvent.Create(selectionHandler);
-            
-            // Initialize other event handlers for thread-safe operations
-            createWiresHandler = new CreateWiresEventHandler { Window = this };
-            createWiresEvent = ExternalEvent.Create(createWiresHandler);
-            
-            removeDeviceHandler = new RemoveDeviceEventHandler { Window = this };
-            removeDeviceEvent = ExternalEvent.Create(removeDeviceHandler);
-            
-            clearCircuitHandler = new ClearCircuitEventHandler { Window = this };
-            clearCircuitEvent = ExternalEvent.Create(clearCircuitHandler);
+            // Assign the ExternalEvents created in valid API context
+            this.selectionHandler = selectionHandler;
+            this.selectionEvent = selectionEvent;
+            this.createWiresHandler = createWiresHandler;
+            this.createWiresEvent = createWiresEvent;
+            this.removeDeviceHandler = removeDeviceHandler;
+            this.removeDeviceEvent = removeDeviceEvent;
+            this.clearCircuitHandler = clearCircuitHandler;
+            this.clearCircuitEvent = clearCircuitEvent;
+            this.initializationHandler = initializationHandler;
+            this.initializationEvent = initializationEvent;
 
-            // Initialize graphics overrides through External Event for thread safety
-            initializationHandler = new InitializationEventHandler { Window = this };
-            initializationEvent = ExternalEvent.Create(initializationHandler);
+            // Set window references in handlers
+            selectionHandler.Window = this;
+            createWiresHandler.Window = this;
+            removeDeviceHandler.Window = this;
+            clearCircuitHandler.Window = this;
+            initializationHandler.Window = this;
             
             // Trigger initialization in proper Revit API context
             initializationEvent.Raise();
@@ -110,6 +120,28 @@ namespace FireAlarmCircuitAnalysis.Views
             {
                 btnRemoveDevice.IsEnabled = dgDevices.SelectedItem != null;
             };
+        }
+        
+        public void OnInitializationComplete(OverrideGraphicSettings selected, OverrideGraphicSettings branch, string error)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                selectedOverride = selected;
+                branchOverride = branch;
+                
+                if (!string.IsNullOrEmpty(error))
+                {
+                    lblStatusMessage.Text = error;
+                    TaskDialog.Show("Initialization Error", error);
+                }
+                else
+                {
+                    // Enable buttons after successful initialization
+                    btnStartSelection.IsEnabled = true;
+                    btnClearCircuit.IsEnabled = true;
+                    lblStatusMessage.Text = "Ready. Click START SELECTION to begin.";
+                }
+            });
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -198,7 +230,8 @@ namespace FireAlarmCircuitAnalysis.Views
                 // Start update timer
                 updateTimer.Start();
 
-                // Single device selection like Python code
+                // Start selection like original working code
+                selectionHandler.IsSelecting = true;
                 if (selectionEvent != null)
                 {
                     selectionEvent.Raise();
@@ -242,20 +275,6 @@ namespace FireAlarmCircuitAnalysis.Views
             UpdateDisplay();
         }
 
-        public string GetSelectionPrompt()
-        {
-            if (circuitManager == null)
-                return "Select device";
-                
-            return circuitManager.Mode == "main"
-                ? $"Select device ({circuitManager.MainCircuit.Count} selected) - SHIFT+Click existing device for T-tap - ESC to finish"
-                : $"{circuitManager.BranchNames[circuitManager.ActiveTapPoint]} ({circuitManager.Branches[circuitManager.ActiveTapPoint].Count} devices) - ESC to return to main";
-        }
-
-        /// <summary>
-        /// DEPRECATED: This method violated Revit API threading rules
-        /// Device processing now happens within SelectionEventHandler.Execute()
-        /// </summary>
         public void ProcessDeviceSelection(ElementId elementId)
         {
             // Simple working version - just add to circuit manager
@@ -288,6 +307,12 @@ namespace FireAlarmCircuitAnalysis.Views
 
                 UpdateDisplay();
                 lblStatusMessage.Text = $"Added device to circuit.";
+                
+                // Continue selection loop like the original working code
+                if (isSelecting && selectionEvent != null)
+                {
+                    selectionEvent.Raise();
+                }
             }
             catch (Exception ex)
             {
@@ -295,303 +320,334 @@ namespace FireAlarmCircuitAnalysis.Views
             }
         }
 
-        private void RemoveBrokenMethodStub()
+        public string GetSelectionPrompt()
         {
-            // This empty method replaces the broken orphaned block below
-            // TODO: Remove this entire method and the orphaned block during cleanup
+            if (circuitManager == null)
+                return "Select device";
+                
+            return circuitManager.Mode == "main"
+                ? $"Select device ({circuitManager.MainCircuit.Count} selected) - SHIFT+Click existing device for T-tap - ESC to finish"
+                : $"{circuitManager.BranchNames[circuitManager.ActiveTapPoint]} ({circuitManager.Branches[circuitManager.ActiveTapPoint].Count} devices) - ESC to return to main";
         }
-
-        /*
-        // BROKEN ORPHANED BLOCK - NEED TO REMOVE:
+        
+        /// <summary>
+        /// Queue a device for processing via ExternalEvent - SDK pattern
+        /// </summary>
+        public void QueueDeviceForProcessing(Element element, bool shiftPressed)
         {
+            // Validate inputs
+            if (element == null)
+            {
+                System.Diagnostics.Debug.WriteLine("QueueDeviceForProcessing: Null element provided");
+                return;
+            }
+            
+            if (!element.IsValidObject)
+            {
+                System.Diagnostics.Debug.WriteLine("QueueDeviceForProcessing: Invalid element provided");
+                return;
+            }
+            
             try
             {
-                // Validate inputs
-                if (elementId == null || elementId == ElementId.InvalidElementId)
+                lock (queueLock)
                 {
-                    lblStatusMessage.Text = "Invalid element selected.";
-                    return;
+                    // Prevent queue overflow
+                    if (deviceQueue.Count > 100)
+                    {
+                        System.Diagnostics.Debug.WriteLine("QueueDeviceForProcessing: Queue overflow, clearing old items");
+                        deviceQueue.Clear();
+                    }
+                    
+                    deviceQueue.Enqueue((element, shiftPressed));
                 }
-
-                if (circuitManager == null)
+                
+                // Trigger processing via ExternalEvent
+                selectionEvent?.Raise();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"QueueDeviceForProcessing failed: {ex.Message}");
+                // Don't show dialog here - this runs on UI thread and could be called frequently
+            }
+        }
+        
+        /// <summary>
+        /// Process queued devices in proper Revit API context - SDK pattern
+        /// </summary>
+        public void ProcessQueuedDevices(UIApplication app)
+        {
+            // Validate API context
+            if (app?.ActiveUIDocument?.Document == null)
+            {
+                System.Diagnostics.Debug.WriteLine("ProcessQueuedDevices: Invalid Revit API context");
+                return;
+            }
+            
+            const int maxProcessingAttempts = 50; // Prevent infinite loops
+            int processedCount = 0;
+            
+            while (processedCount < maxProcessingAttempts)
+            {
+                (Element element, bool shiftPressed) deviceData;
+                
+                lock (queueLock)
                 {
-                    lblStatusMessage.Text = "Circuit manager not initialized.";
-                    return;
+                    if (deviceQueue.Count == 0)
+                        break;
+                    deviceData = deviceQueue.Dequeue();
                 }
-
-                Element element = null;
+                
+                // Validate element before processing
+                if (deviceData.element == null || !deviceData.element.IsValidObject)
+                {
+                    System.Diagnostics.Debug.WriteLine("ProcessQueuedDevices: Skipping invalid element");
+                    processedCount++;
+                    continue;
+                }
+                
                 try
                 {
-                    element = null; // doc?.GetElement(elementId); // REMOVED - unsafe API call
+                    ProcessDevice(app, deviceData.element, deviceData.shiftPressed);
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Failed to get element: {ex.Message}");
-                    lblStatusMessage.Text = "Failed to access selected element.";
+                    System.Diagnostics.Debug.WriteLine($"ProcessQueuedDevices: Error processing device {deviceData.element.Id}: {ex.Message}");
+                    // Continue processing other items in queue
+                }
+                
+                processedCount++;
+            }
+            
+            if (processedCount >= maxProcessingAttempts)
+            {
+                System.Diagnostics.Debug.WriteLine("ProcessQueuedDevices: Hit maximum processing limit, clearing remaining queue");
+                lock (queueLock)
+                {
+                    deviceQueue.Clear();
+                }
+            }
+        }
+        
+        private void ProcessDevice(UIApplication app, Element element, bool shiftPressed)
+        {
+            try
+            {
+                var elementId = element.Id;
+                var doc = app.ActiveUIDocument.Document;
+                var activeView = app.ActiveUIDocument.ActiveView;
+                
+                // Get circuit manager from window
+                if (circuitManager == null)
+                {
+                    var parameters = GetParameters();
+                    circuitManager = new CircuitManager(parameters);
+                }
+                
+                // Check if device already exists in circuit
+                bool deviceExists = circuitManager.DeviceData.ContainsKey(elementId);
+                
+                // Handle Shift+Click for T-tap creation
+                if (shiftPressed && deviceExists && circuitManager.Mode == "main")
+                {
+                    circuitManager.StartBranchFromDevice(elementId);
+                    // No Dispatcher.Invoke needed - already in proper context
+                    lblMode.Text = "T-TAP MODE";
+                    lblStatusMessage.Text = $"Creating T-tap from '{element.Name}'. Select devices for branch.";
+                    UpdateDisplay();
                     return;
                 }
                 
-                if (element == null)
+                // Remove device if already selected (toggle behavior)
+                if (deviceExists && !shiftPressed)
                 {
-                    lblStatusMessage.Text = "Selected element not found.";
+                    using (Transaction trans = new Transaction(doc, "Remove Device"))
+                    {
+                        trans.Start();
+                        
+                        // Remove from circuit
+                        var (location, position) = circuitManager.RemoveDevice(elementId);
+                        
+                        // Restore original graphics
+                        if (circuitManager.OriginalOverrides.ContainsKey(elementId))
+                        {
+                            var original = circuitManager.OriginalOverrides[elementId];
+                            activeView.SetElementOverrides(elementId, original ?? new OverrideGraphicSettings());
+                            circuitManager.OriginalOverrides.Remove(elementId);
+                        }
+                        
+                        trans.Commit();
+                    }
+                    
+                    // No Dispatcher.Invoke needed - already in proper context
+                    lblStatusMessage.Text = $"Removed '{element.Name}' from circuit.";
+                    UpdateDisplay();
                     return;
                 }
-
-                // Check if Shift is pressed for T-tap creation
-                if (Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift))
+                
+                // Add new device to circuit
+                if (!deviceExists)
                 {
-                    if (circuitManager.DeviceData.ContainsKey(elementId) && circuitManager.Mode == "main")
+                    // Get electrical connector
+                    Connector connector = GetElectricalConnector(element);
+                    if (connector == null)
                     {
-                        try
-                        {
-                            // Start T-tap branch from this device
-                            circuitManager.StartBranchFromDevice(elementId);
-                            
-                            // Update UI to show T-tap mode
-                            lblMode.Text = "T-TAP MODE";
-                            var deviceName = element.Name ?? "Device";
-                            lblStatusMessage.Text = $"Creating T-tap from '{deviceName}'. Select devices to add to branch.";
-                            
-                            // Update display to show branch structure
-                            UpdateDisplay();
-                            return;
-                        }
-                        catch (Exception ex)
-                        {
-                            lblStatusMessage.Text = $"Error creating T-tap: {ex.Message}";
-                            return;
-                        }
-                    }
-                    else if (!circuitManager.DeviceData.ContainsKey(elementId))
-                    {
-                        // Show message that device must be in main circuit first
-                        TaskDialog.Show("T-Tap Creation", 
-                            "To create a T-tap, SHIFT+Click on a device that's already in the main circuit.");
+                        TaskDialog.Show("Invalid Device", 
+                            $"'{element.Name}' has no electrical connector.");
                         return;
                     }
-                    else if (circuitManager.Mode != "main")
+                    
+                    // Extract current data
+                    var currentData = GetCurrentDraw(element, doc);
+                    
+                    // Create device data
+                    var deviceData = new DeviceData
                     {
-                        // Show message that T-taps can only be created from main circuit
-                        TaskDialog.Show("T-Tap Creation", 
-                            "T-taps can only be created from devices in the main circuit. Press ESC to return to main circuit mode.");
-                        return;
-                    }
-                }
-
-                // Check if device is already selected
-                if (circuitManager.DeviceData.ContainsKey(elementId))
-                {
-                    // In main mode: Remove device (unless Shift was pressed for T-tap)
-                    // In branch mode: Remove device from branch
-                    if (!Keyboard.IsKeyDown(Key.LeftShift) && !Keyboard.IsKeyDown(Key.RightShift))
+                        Element = element,
+                        Connector = connector,
+                        Current = currentData,
+                        Name = element.Name ?? $"Device {elementId.IntegerValue}"
+                    };
+                    
+                    using (Transaction trans = new Transaction(doc, "Add Device"))
                     {
-                        try
+                        trans.Start();
+                        
+                        // Store original override
+                        if (!circuitManager.OriginalOverrides.ContainsKey(elementId))
                         {
-                            var (location, position) = circuitManager.RemoveDevice(elementId);
-
-                            // Restore original override safely
-                            try
-                            {
-                                if (circuitManager.OriginalOverrides.ContainsKey(elementId))
-                                {
-                                    var originalOverride = circuitManager.OriginalOverrides[elementId];
-                                    // if (activeView != null && originalOverride != null) // REMOVED - unsafe API call
-                                    if (false)
-                                    {
-                                        // activeView.SetElementOverrides(elementId, originalOverride); // REMOVED - unsafe API call
-                                    }
-                                    circuitManager.OriginalOverrides.Remove(elementId);
-                                }
-                                else
-                                {
-                                    // if (activeView != null) // REMOVED - unsafe API call
-                                    if (false)
-                                    {
-                                        // activeView.SetElementOverrides(elementId, new OverrideGraphicSettings()); // REMOVED - unsafe API call
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"Failed to restore element override: {ex.Message}");
-                                // Continue without restoring override - not critical
-                            }
-
-                            try
-                            {
-                                // doc?.Regenerate(); // REMOVED - unsafe API call
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"Document regeneration failed during device removal: {ex.Message}");
-                                // Continue without regeneration
-                            }
-                            
-                            // Update status message
-                            lblStatusMessage.Text = $"Removed '{element.Name ?? "Device"}' from circuit.";
+                            var original = activeView.GetElementOverrides(elementId);
+                            circuitManager.OriginalOverrides[elementId] = original;
                         }
-                        catch (Exception ex)
+                        
+                        // Apply visual override
+                        var overrideSettings = new OverrideGraphicSettings();
+                        if (circuitManager.Mode == "main")
                         {
-                            lblStatusMessage.Text = $"Error removing device: {ex.Message}";
-                        }
-                    }
-                }
-                else
-                {
-                    // Add new device to circuit
-                    DeviceData deviceData = null;
-                    try
-                    {
-                        var connector = GetElectricalConnector(element);
-                        if (connector != null)
-                        {
-                            // Store original override safely
-                            try
-                            {
-                                // if (activeView != null && !circuitManager.OriginalOverrides.ContainsKey(elementId)) // REMOVED - unsafe API call
-                        if (false)
-                                {
-                                    // var originalOverride = activeView.GetElementOverrides(elementId); // REMOVED - unsafe API call
-                                    if (originalOverride != null)
-                                    {
-                                        circuitManager.OriginalOverrides[elementId] = originalOverride;
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"Failed to store original override: {ex.Message}");
-                                // Continue without storing override - not critical
-                            }
-
-                            var currentData = GetCurrentDraw(element);
-                            deviceData = new DeviceData
-                            {
-                                Element = element,
-                                Connector = connector,
-                                Current = currentData ?? new CurrentData { Alarm = 0.030, Standby = 0.030 }, // Default values
-                                Name = GetSafeElementName(element, elementId)
-                            };
-
-                            if (circuitManager.Mode == "main")
-                            {
-                                lblStatusMessage.Text = "Adding device to circuit manager...";
-                                circuitManager.AddDeviceToMain(elementId, deviceData);
-                                
-                                lblStatusMessage.Text = "Applying visual override...";
-                                try
-                                {
-                                    // if (activeView != null && selectedOverride != null && elementId != ElementId.InvalidElementId) // REMOVED - unsafe API call
-                                if (false)
-                                    {
-                                        // activeView.SetElementOverrides(elementId, selectedOverride); // REMOVED - unsafe API call
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    System.Diagnostics.Debug.WriteLine($"Failed to apply override: {ex.Message}");
-                                    // Continue without visual override - not critical for functionality
-                                }
-                                lblStatusMessage.Text = $"Added '{deviceData.Name}' to main circuit.";
-                            }
-                            else
-                            {
-                                circuitManager.AddDeviceToBranch(elementId, deviceData);
-                                try
-                                {
-                                    // if (activeView != null && branchOverride != null && elementId != ElementId.InvalidElementId) // REMOVED - unsafe API call
-                                if (false)
-                                    {
-                                        // activeView.SetElementOverrides(elementId, branchOverride); // REMOVED - unsafe API call
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    System.Diagnostics.Debug.WriteLine($"Failed to apply branch override: {ex.Message}");
-                                    // Continue without visual override - not critical for functionality
-                                }
-                                lblStatusMessage.Text = $"Added '{deviceData.Name}' to T-tap branch.";
-                            }
-
-                            try
-                            {
-                                // doc?.Regenerate(); // REMOVED - unsafe API call
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"Document regeneration failed: {ex.Message}");
-                                // Continue without regeneration - view will update eventually
-                            }
+                            overrideSettings.SetHalftone(true);
+                            circuitManager.AddDeviceToMain(elementId, deviceData);
                         }
                         else
                         {
-                            // Show error if device doesn't have electrical connector
-                            TaskDialog.Show("Invalid Device", 
-                                $"'{element.Name ?? "Selected element"}' does not have an electrical connector and cannot be added to the circuit.");
+                            overrideSettings.SetProjectionLineColor(new Autodesk.Revit.DB.Color(255, 128, 0));
+                            overrideSettings.SetHalftone(true);
+                            circuitManager.AddDeviceToBranch(elementId, deviceData);
                         }
+                        activeView.SetElementOverrides(elementId, overrideSettings);
                         
-                        // Update display after each device is added
-                        lblStatusMessage.Text = "Updating display...";
-                        UpdateDisplay();
-                        
-                        if (deviceData != null)
-                        {
-                            lblStatusMessage.Text = $"Successfully added '{deviceData.Name}' to circuit.";
-                        }
-                        else
-                        {
-                            lblStatusMessage.Text = "Device processing completed.";
-                        }
+                        trans.Commit();
                     }
-                    catch (Exception ex)
-                    {
-                        lblStatusMessage.Text = $"Error adding device: {ex.Message}";
-                        TaskDialog.Show("Error", $"Failed to add device to circuit: {ex.Message}");
-                    }
+                    
+                    // No Dispatcher.Invoke needed - already in proper context
+                    string mode = circuitManager.Mode == "main" ? "main circuit" : "T-tap branch";
+                    lblStatusMessage.Text = $"Added '{deviceData.Name}' to {mode}.";
+                    UpdateDisplay();
                 }
             }
             catch (Exception ex)
             {
-                lblStatusMessage.Text = $"Unexpected error: {ex.Message}";
-                TaskDialog.Show("Error", $"Unexpected error during device selection: {ex.Message}\n\nPlease try again.");
+                TaskDialog.Show("Device Processing Error", ex.Message);
             }
         }
-        */
-        // END BROKEN ORPHANED BLOCK
-
-        private void BtnCreateTTap_Click(object sender, RoutedEventArgs e)
+        
+        private Connector GetElectricalConnector(Element element)
         {
-            if (dgDevices.SelectedItem is DeviceListItem selectedItem)
+            try
             {
-                // Find the device ID from the selected item
-                var deviceId = circuitManager.MainCircuit.FirstOrDefault(id =>
-                    circuitManager.DeviceData[id].Name == selectedItem.Name.Replace("  └─ ", ""));
-
-                if (deviceId != null)
+                if (element is FamilyInstance fi)
                 {
-                    circuitManager.StartBranchFromDevice(deviceId);
-                    lblMode.Text = "T-TAP MODE";
-                    lblStatusMessage.Text = $"Creating {circuitManager.BranchNames[deviceId]}. Select devices to add.";
-
-                    // Start selection in branch mode
-                    isSelecting = true;
-                    btnStartSelection.Content = "STOP SELECTION";
-                    btnStartSelection.IsEnabled = true;
-                    
-                    // Start update timer
-                    updateTimer.Start();
-                    
-                    // Start selection using external event
-                    // Start selection
-                    // No event needed
-                    
-                    UpdateDisplay();
+                    var connMgr = fi.MEPModel?.ConnectorManager;
+                    if (connMgr != null)
+                    {
+                        foreach (Connector conn in connMgr.Connectors)
+                        {
+                            if (conn.Domain == Domain.DomainElectrical)
+                                return conn;
+                        }
+                    }
                 }
             }
-            else
+            catch { }
+            return null;
+        }
+        
+        private CurrentData GetCurrentDraw(Element element, Document doc)
+        {
+            var currentData = new CurrentData { Alarm = 0.030, Standby = 0.030, Found = false };
+            
+            try
             {
-                TaskDialog.Show("Selection Required", "Please select a device from the list to create a T-tap branch.");
+                // Check instance parameters
+                foreach (Parameter param in element.Parameters)
+                {
+                    if (param?.Definition?.Name == null || !param.HasValue) continue;
+                    
+                    string paramName = param.Definition.Name.ToUpper();
+                    if (!paramName.Contains("CURRENT") && !paramName.Contains("DRAW")) continue;
+                    
+                    double value = 0;
+                    if (param.StorageType == StorageType.Double)
+                    {
+                        value = param.AsDouble();
+                    }
+                    else if (param.StorageType == StorageType.String)
+                    {
+                        string str = param.AsString()?.ToUpper();
+                        if (!string.IsNullOrEmpty(str))
+                        {
+                            var match = System.Text.RegularExpressions.Regex.Match(str, @"[\d.]+");
+                            if (match.Success)
+                            {
+                                double.TryParse(match.Value, out value);
+                                if (str.Contains("MA")) value /= 1000.0;
+                            }
+                        }
+                    }
+                    
+                    if (value > 0)
+                    {
+                        if (paramName.Contains("ALARM"))
+                            currentData.Alarm = value;
+                        else if (paramName.Contains("STANDBY"))
+                            currentData.Standby = value;
+                        else
+                            currentData.Alarm = value;
+                        currentData.Found = true;
+                    }
+                }
+                
+                // Check type parameters if not found
+                if (!currentData.Found)
+                {
+                    var typeId = element.GetTypeId();
+                    if (typeId != null && typeId != ElementId.InvalidElementId)
+                    {
+                        var elemType = doc.GetElement(typeId);
+                        if (elemType != null)
+                        {
+                            foreach (Parameter param in elemType.Parameters)
+                            {
+                                if (param?.Definition?.Name?.ToUpper().Contains("CURRENT") == true && param.HasValue)
+                                {
+                                    double value = 0;
+                                    if (param.StorageType == StorageType.Double)
+                                        value = param.AsDouble();
+                                    
+                                    if (value > 0)
+                                    {
+                                        currentData.Alarm = value;
+                                        currentData.Found = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
+            catch { }
+            
+            return currentData;
         }
 
         private void BtnCreateWires_Click(object sender, RoutedEventArgs e)
@@ -604,22 +660,17 @@ namespace FireAlarmCircuitAnalysis.Views
                     return;
                 }
 
-                // Use external event for thread-safe wire creation
                 lblStatusMessage.Text = "Creating wires...";
                 btnCreateWires.IsEnabled = false;
                 createWiresEvent.Raise();
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"BtnCreateWires_Click failed: {ex.Message}");
                 TaskDialog.Show("Error", $"Failed to initiate wire creation: {ex.Message}");
                 btnCreateWires.IsEnabled = true;
             }
         }
-        
-        /// <summary>
-        /// Callback from CreateWiresEventHandler when wire creation is complete
-        /// </summary>
+
         public void OnWireCreationComplete(int successCount, string errorMessage)
         {
             Dispatcher.Invoke(() =>
@@ -634,165 +685,10 @@ namespace FireAlarmCircuitAnalysis.Views
                 else
                 {
                     lblStatusMessage.Text = $"Created {successCount} wires successfully.";
-                    ShowFinalSummary(successCount);
                 }
                 
                 UpdateDisplay();
             });
-        }
-
-        /// <summary>
-        /// Callback from InitializationEventHandler when OverrideGraphicSettings initialization is complete
-        /// </summary>
-        public void OnInitializationComplete(OverrideGraphicSettings selectedOverride, OverrideGraphicSettings branchOverride, string errorMessage)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                // Store the properly created overrides
-                this.selectedOverride = selectedOverride;
-                this.branchOverride = branchOverride;
-                
-                if (!string.IsNullOrEmpty(errorMessage))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Initialization warning: {errorMessage}");
-                    // Continue with basic overrides - not critical for functionality
-                }
-                
-                // Enable UI interactions now that initialization is complete
-                btnStartSelection.IsEnabled = true;
-                btnCreateWires.IsEnabled = true;
-                btnClearCircuit.IsEnabled = true;
-            });
-        }
-
-        [Obsolete("This method makes direct Revit API calls from UI thread - use CreateWiresEventHandler instead")]
-        private int CreateCircuitWires()
-        {
-            int successCount = 0;
-            // var wireType = new FilteredElementCollector(doc) // REMOVED - unsafe API call
-            WireType wireType = null;
-
-            if (wireType == null) return 0;
-
-            // Create main circuit wires
-            for (int i = 0; i < circuitManager.MainCircuit.Count - 1; i++)
-            {
-                try
-                {
-                    var startData = circuitManager.DeviceData[circuitManager.MainCircuit[i]];
-                    var endData = circuitManager.DeviceData[circuitManager.MainCircuit[i + 1]];
-
-                    var points = CreateRoutingPoints(startData.Connector.Origin, endData.Connector.Origin);
-
-                    var wire = Wire.Create(
-                        null, // doc, // REMOVED - unsafe API call
-                        wireType.Id,
-                        ElementId.InvalidElementId, // activeView.Id, // REMOVED - unsafe API call
-                        WiringType.Arc,
-                        points,
-                        startData.Connector,
-                        endData.Connector
-                    );
-
-                    if (wire != null) successCount++;
-                }
-                catch { }
-            }
-
-            // Create branch wires
-            foreach (var kvp in circuitManager.Branches)
-            {
-                if (kvp.Value.Count == 0) continue;
-
-                try
-                {
-                    // T-tap connection
-                    var tapData = circuitManager.DeviceData[kvp.Key];
-                    var firstBranchData = circuitManager.DeviceData[kvp.Value[0]];
-
-                    var points = CreateRoutingPoints(tapData.Connector.Origin, firstBranchData.Connector.Origin);
-
-                    var wire = Wire.Create(
-                        null, // doc, // REMOVED - unsafe API call
-                        wireType.Id,
-                        ElementId.InvalidElementId, // activeView.Id, // REMOVED - unsafe API call
-                        WiringType.Arc,
-                        points,
-                        tapData.Connector,
-                        firstBranchData.Connector
-                    );
-
-                    if (wire != null) successCount++;
-                }
-                catch { }
-
-                // Branch continuation wires
-                for (int i = 0; i < kvp.Value.Count - 1; i++)
-                {
-                    try
-                    {
-                        var startData = circuitManager.DeviceData[kvp.Value[i]];
-                        var endData = circuitManager.DeviceData[kvp.Value[i + 1]];
-
-                        var points = CreateRoutingPoints(startData.Connector.Origin, endData.Connector.Origin);
-
-                        var wire = Wire.Create(
-                            null, // doc, // REMOVED - unsafe API call
-                            wireType.Id,
-                            ElementId.InvalidElementId, // activeView.Id, // REMOVED - unsafe API call
-                            WiringType.Arc,
-                            points,
-                            startData.Connector,
-                            endData.Connector
-                        );
-
-                        if (wire != null) successCount++;
-                    }
-                    catch { }
-                }
-            }
-
-            return successCount;
-        }
-
-        private IList<XYZ> CreateRoutingPoints(XYZ startPt, XYZ endPt)
-        {
-            var points = new List<XYZ>();
-            points.Add(startPt);
-
-            double xDiff = Math.Abs(startPt.X - endPt.X);
-            double yDiff = Math.Abs(startPt.Y - endPt.Y);
-
-            if (xDiff < 0.01 && yDiff < 0.01)
-            {
-                // Vertical connection
-                double offset = 2.0;
-                double midZ = (startPt.Z + endPt.Z) / 2;
-                var midPt = new XYZ(startPt.X + offset, startPt.Y, midZ);
-                points.Add(midPt);
-            }
-            else
-            {
-                // Arc routing
-                double midX = (startPt.X + endPt.X) / 2;
-                double midY = (startPt.Y + endPt.Y) / 2;
-                double midZ = (startPt.Z + endPt.Z) / 2;
-
-                var direction = (endPt - startPt).Normalize();
-                var perpendicular = new XYZ(-direction.Y, direction.X, 0);
-                double arcOffset = 2.0;
-
-                var arcPoint = new XYZ(
-                    midX + perpendicular.X * arcOffset,
-                    midY + perpendicular.Y * arcOffset,
-                    midZ
-                );
-
-                points.Add(arcPoint);
-            }
-
-            points.Add(endPt);
-            return points;
         }
 
         private void BtnClearCircuit_Click(object sender, RoutedEventArgs e)
@@ -803,7 +699,6 @@ namespace FireAlarmCircuitAnalysis.Views
 
             if (result == TaskDialogResult.Yes)
             {
-                // Use external event for thread-safe circuit clearing
                 if (circuitManager != null && circuitManager.OriginalOverrides.Count > 0)
                 {
                     lblStatusMessage.Text = "Clearing circuit...";
@@ -811,15 +706,11 @@ namespace FireAlarmCircuitAnalysis.Views
                 }
                 else
                 {
-                    // No overrides to clear, just clear UI
                     OnCircuitClearComplete(null);
                 }
             }
         }
-        
-        /// <summary>
-        /// Callback from ClearCircuitEventHandler when circuit clear is complete
-        /// </summary>
+
         public void OnCircuitClearComplete(string errorMessage)
         {
             Dispatcher.Invoke(() =>
@@ -837,7 +728,6 @@ namespace FireAlarmCircuitAnalysis.Views
                     UpdateStatusDisplay();
                     lblStatusMessage.Text = "Circuit cleared";
                     lblMode.Text = "IDLE";
-                    btnCreateTTap.IsEnabled = false;
                     btnCreateWires.IsEnabled = false;
                     btnSaveCircuit.IsEnabled = false;
                     btnValidate.IsEnabled = false;
@@ -850,7 +740,6 @@ namespace FireAlarmCircuitAnalysis.Views
         {
             if (isSelecting && circuitManager != null)
             {
-                // Ensure tree calculations are up to date
                 if (circuitManager.RootNode != null)
                 {
                     circuitManager.RootNode.UpdateVoltages(circuitManager.Parameters.SystemVoltage, circuitManager.Parameters.Resistance);
@@ -865,47 +754,10 @@ namespace FireAlarmCircuitAnalysis.Views
         {
             try
             {
-                // Update circuit tree view and device list
-                try
-                {
-                    UpdateTreeView();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"UpdateTreeView failed: {ex.Message}");
-                    // Continue with other updates
-                }
-                
-                try
-                {
-                    UpdateDeviceGrid();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"UpdateDeviceGrid failed: {ex.Message}");
-                    // Continue with other updates
-                }
-                
-                try
-                {
-                    UpdateStatusDisplay();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"UpdateStatusDisplay failed: {ex.Message}");
-                    // Continue with other updates
-                }
-                
-                // Update summary and analysis panels
-                try
-                {
-                    UpdateSummaryPanel();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"UpdateSummaryPanel failed: {ex.Message}");
-                    // Continue - this is the final update
-                }
+                UpdateTreeView();
+                UpdateDeviceGrid();
+                UpdateStatusDisplay();
+                UpdateSummaryPanel();
             }
             catch (Exception ex)
             {
@@ -917,10 +769,8 @@ namespace FireAlarmCircuitAnalysis.Views
         private void UpdateTreeView()
         {
             tvCircuit.Items.Clear();
-
             if (circuitManager?.RootNode == null) return;
-
-            // Build tree from circuit nodes
+            
             var rootTreeItem = BuildTreeViewItem(circuitManager.RootNode);
             tvCircuit.Items.Add(rootTreeItem);
         }
@@ -935,7 +785,6 @@ namespace FireAlarmCircuitAnalysis.Views
                 Tag = node
             };
             
-            // Set colors based on node type and status
             if (node.NodeType == "Root")
             {
                 treeItem.FontWeight = FontWeights.Bold;
@@ -963,159 +812,13 @@ namespace FireAlarmCircuitAnalysis.Views
                 }
             }
             
-            // Add children
             foreach (var child in node.Children)
             {
                 var childItem = BuildTreeViewItem(child);
                 treeItem.Items.Add(childItem);
-                
-                // Add distance indicator if there's a distance
-                if (child.DistanceFromParent > 0)
-                {
-                    var distItem = new TreeViewItem
-                    {
-                        Header = $"─── {child.DistanceFromParent:F1}ft ───",
-                        FontFamily = new FontFamily("Consolas"),
-                        Foreground = new SolidColorBrush(Colors.Gray),
-                        FontSize = 10,
-                        IsEnabled = false
-                    };
-                    treeItem.Items.Insert(treeItem.Items.Count - 1, distItem);
-                }
-            }
-            
-            // Add context menu
-            var contextMenu = new ContextMenu();
-            
-            if (node.NodeType == "Device")
-            {
-                var removeItem = new MenuItem { Header = "Remove Device" };
-                removeItem.Click += (s, e) => RemoveNodeFromCircuit(node);
-                contextMenu.Items.Add(removeItem);
-                
-                var branchItem = new MenuItem { Header = "Create T-Tap Branch" };
-                branchItem.Click += (s, e) => CreateBranchFromNode(node);
-                contextMenu.Items.Add(branchItem);
-                
-                contextMenu.Items.Add(new Separator());
-                
-                var infoItem = new MenuItem { Header = "Device Information" };
-                infoItem.Click += (s, e) => ShowNodeInfo(node);
-                contextMenu.Items.Add(infoItem);
-            }
-            
-            if (node.NodeType == "Branch")
-            {
-                var removeItem = new MenuItem { Header = "Remove Branch" };
-                removeItem.Click += (s, e) => RemoveBranchFromCircuit(node);
-                contextMenu.Items.Add(removeItem);
-            }
-            
-            if (contextMenu.Items.Count > 0)
-            {
-                treeItem.ContextMenu = contextMenu;
             }
             
             return treeItem;
-        }
-        
-        private void RemoveNodeFromCircuit(CircuitNode node)
-        {
-            if (node?.ElementId == null) return;
-            
-            var result = TaskDialog.Show("Remove Device", 
-                $"Remove '{node.Name}' from circuit?", 
-                TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No);
-                
-            if (result == TaskDialogResult.Yes)
-            {
-                // Use external event for thread-safe removal
-                removeDeviceHandler.DeviceId = node.ElementId;
-                removeDeviceHandler.DeviceName = node.Name;
-                lblStatusMessage.Text = "Removing device...";
-                removeDeviceEvent.Raise();
-            }
-        }
-        
-        /// <summary>
-        /// Callback from RemoveDeviceEventHandler when device removal is complete
-        /// </summary>
-        public void OnDeviceRemovalComplete(string deviceName, string errorMessage)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                if (!string.IsNullOrEmpty(errorMessage))
-                {
-                    lblStatusMessage.Text = errorMessage;
-                    TaskDialog.Show("Error", errorMessage);
-                }
-                else
-                {
-                    lblStatusMessage.Text = $"Removed '{deviceName}' from circuit.";
-                }
-                
-                UpdateDisplay();
-            });
-        }
-        
-        private void CreateBranchFromNode(CircuitNode node)
-        {
-            if (node?.ElementId == null) return;
-            
-            circuitManager.StartBranchFromDevice(node.ElementId);
-            lblMode.Text = "T-TAP MODE";
-            lblStatusMessage.Text = $"Creating branch from {node.Name}. Select devices to add.";
-            
-            // Start selection in branch mode
-            isSelecting = true;
-            btnStartSelection.Content = "STOP SELECTION";
-            btnStartSelection.IsEnabled = true;
-            
-            updateTimer.Start();
-            // Start selection
-            // No event needed
-        }
-        
-        private void ShowNodeInfo(CircuitNode node)
-        {
-            if (node?.DeviceData == null) return;
-            
-            var info = $"Device: {node.Name}\n" +
-                      $"Type: {node.DeviceData.DeviceType ?? "Unknown"}\n" +
-                      $"Current: {node.DeviceData.Current.Alarm:F3}A\n" +
-                      $"Voltage: {node.Voltage:F1}V\n" +
-                      $"Voltage Drop: {node.VoltageDrop:F2}V\n" +
-                      $"Distance from Parent: {node.DistanceFromParent:F1}ft\n" +
-                      $"Path: {node.Path}\n" +
-                      $"Status: {node.Status}";
-                      
-            TaskDialog.Show("Device Information", info);
-        }
-        
-        private void RemoveBranchFromCircuit(CircuitNode branchNode)
-        {
-            var result = TaskDialog.Show("Remove Branch", 
-                $"Remove branch '{branchNode.Name}' and all its devices?", 
-                TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No);
-                
-            if (result == TaskDialogResult.Yes)
-            {
-                // Collect all devices to remove
-                var devicesToRemove = branchNode.GetAllNodes()
-                    .Where(n => n.ElementId != null)
-                    .Select(n => n.ElementId)
-                    .ToList();
-                
-                // Use a special branch removal handler or remove devices one by one
-                // For now, we'll remove the first device which will cascade remove the branch
-                if (devicesToRemove.Any())
-                {
-                    removeDeviceHandler.DeviceId = devicesToRemove.First();
-                    removeDeviceHandler.DeviceName = branchNode.Name;
-                    lblStatusMessage.Text = "Removing branch...";
-                    removeDeviceEvent.Raise();
-                }
-            }
         }
 
         private void UpdateDeviceGrid()
@@ -1127,10 +830,7 @@ namespace FireAlarmCircuitAnalysis.Views
             }
 
             var devices = new ObservableCollection<DeviceListItem>();
-            
-            // Build device list from tree structure
             BuildDeviceList(circuitManager.RootNode, devices, "");
-
             dgDevices.ItemsSource = devices;
         }
         
@@ -1150,13 +850,11 @@ namespace FireAlarmCircuitAnalysis.Views
                 });
             }
             
-            // Process children
             foreach (var child in node.Children)
             {
                 string childPrefix = prefix;
                 if (child.NodeType == "Branch")
                 {
-                    // Add branch header if needed
                     childPrefix = "  ";
                 }
                 else if (child.NodeType == "Device" && node.NodeType == "Branch")
@@ -1170,15 +868,13 @@ namespace FireAlarmCircuitAnalysis.Views
 
         private void UpdateStatusDisplay()
         {
-            // This method is kept for compatibility but status is now handled in analysis panel
-            // Status bar updates are handled in UpdateSummaryPanel()
+            // Status updates handled in UpdateSummaryPanel
         }
 
         private void UpdateSummaryPanel()
         {
             if (circuitManager == null)
             {
-                // Update status bar when no circuit
                 lblStatusDeviceCount.Text = "0";
                 lblStatusLoad.Text = "0.000A";
                 lblStatusMessage.Text = "Ready to start circuit analysis";
@@ -1192,11 +888,9 @@ namespace FireAlarmCircuitAnalysis.Views
             double voltageDrop = circuitManager.CalculateVoltageDrop(totalLoad, totalLength);
             double eolVoltage = circuitManager.Parameters.SystemVoltage - voltageDrop;
             
-            // Update status bar with live values
             lblStatusDeviceCount.Text = totalDevices.ToString();
             lblStatusLoad.Text = $"{totalLoad:F3}A";
             
-            // Update status message based on circuit health
             if (totalLoad > circuitManager.Parameters.UsableLoad)
             {
                 lblStatusMessage.Text = "⚠️ Circuit exceeds load capacity";
@@ -1218,7 +912,6 @@ namespace FireAlarmCircuitAnalysis.Views
                 lblStatusMessage.Text = "Ready to start circuit analysis";
             }
             
-            // Update analysis tab with live values
             UpdateAnalysisTab();
         }
         
@@ -1226,7 +919,6 @@ namespace FireAlarmCircuitAnalysis.Views
         {
             if (circuitManager == null)
             {
-                // Reset all analysis values to zero when no circuit manager
                 lblAnalysisAlarmLoad.Text = "0.000 A";
                 lblAnalysisStandbyLoad.Text = "0.000 A";
                 lblAnalysisUtilization.Text = "0%";
@@ -1239,7 +931,6 @@ namespace FireAlarmCircuitAnalysis.Views
                 return;
             }
             
-            // Calculate live values
             double totalAlarmLoad = circuitManager.GetTotalSystemLoad();
             double totalStandbyLoad = circuitManager.GetTotalStandbyLoad();
             double totalLength = circuitManager.CalculateTotalWireLength();
@@ -1252,7 +943,6 @@ namespace FireAlarmCircuitAnalysis.Views
             int totalDevices = circuitManager.DeviceData.Count;
             int totalTTaps = circuitManager.Branches.Count;
             
-            // Update all analysis labels with live values
             lblAnalysisAlarmLoad.Text = $"{totalAlarmLoad:F3} A";
             lblAnalysisStandbyLoad.Text = $"{totalStandbyLoad:F3} A";
             lblAnalysisUtilization.Text = $"{loadUtilization:F0}%";
@@ -1263,19 +953,16 @@ namespace FireAlarmCircuitAnalysis.Views
             lblAnalysisTotalDevices.Text = totalDevices.ToString();
             lblAnalysisTTaps.Text = totalTTaps.ToString();
             
-            // Set colors based on status
             SetAnalysisColors(totalAlarmLoad, eolVoltage, loadUtilization, dropPercentage);
         }
         
         private void SetAnalysisColors(double totalAlarmLoad, double eolVoltage, double loadUtilization, double dropPercentage)
         {
-            // Color code the values based on status
             var greenBrush = new SolidColorBrush(Colors.Green);
             var orangeBrush = new SolidColorBrush(Colors.Orange);
             var redBrush = new SolidColorBrush(Colors.Red);
             var normalBrush = new SolidColorBrush(Colors.Black);
             
-            // Alarm Load coloring
             if (totalAlarmLoad > circuitManager.Parameters.UsableLoad)
                 lblAnalysisAlarmLoad.Foreground = redBrush;
             else if (totalAlarmLoad > circuitManager.Parameters.UsableLoad * 0.9)
@@ -1283,7 +970,6 @@ namespace FireAlarmCircuitAnalysis.Views
             else
                 lblAnalysisAlarmLoad.Foreground = greenBrush;
             
-            // Utilization coloring
             if (loadUtilization > 100)
                 lblAnalysisUtilization.Foreground = redBrush;
             else if (loadUtilization > 90)
@@ -1291,7 +977,6 @@ namespace FireAlarmCircuitAnalysis.Views
             else
                 lblAnalysisUtilization.Foreground = greenBrush;
             
-            // EOL Voltage coloring
             if (eolVoltage < circuitManager.Parameters.MinVoltage)
                 lblAnalysisEOLVoltage.Foreground = redBrush;
             else if (eolVoltage < circuitManager.Parameters.MinVoltage + 2.0)
@@ -1299,7 +984,6 @@ namespace FireAlarmCircuitAnalysis.Views
             else
                 lblAnalysisEOLVoltage.Foreground = greenBrush;
             
-            // Voltage Drop Percentage coloring
             if (dropPercentage > 10.0)
                 lblAnalysisDropPercentage.Foreground = redBrush;
             else if (dropPercentage > 8.0)
@@ -1307,7 +991,6 @@ namespace FireAlarmCircuitAnalysis.Views
             else
                 lblAnalysisDropPercentage.Foreground = greenBrush;
             
-            // Other values use normal coloring
             lblAnalysisStandbyLoad.Foreground = normalBrush;
             lblAnalysisTotalLength.Foreground = normalBrush;
             lblAnalysisVoltageDrop.Foreground = normalBrush;
@@ -1315,555 +998,29 @@ namespace FireAlarmCircuitAnalysis.Views
             lblAnalysisTTaps.Foreground = normalBrush;
         }
 
-        private void ShowFinalSummary(int wiresCreated)
+        private void BtnCreateTTap_Click(object sender, RoutedEventArgs e)
         {
-            if (circuitManager == null) return;
-
-            double totalLoad = circuitManager.GetTotalSystemLoad();
-            double totalLength = circuitManager.CalculateTotalWireLength();
-            double voltageDrop = circuitManager.CalculateVoltageDrop(totalLoad, totalLength);
-            double eolVoltage = circuitManager.Parameters.SystemVoltage - voltageDrop;
-            double voltageDropPercent = voltageDrop / circuitManager.Parameters.SystemVoltage * 100;
-
-            string status = eolVoltage >= circuitManager.Parameters.MinVoltage &&
-                           totalLoad <= circuitManager.Parameters.UsableLoad ? "PASS ✓" : "FAIL ✗";
-
-            string summary = $"CIRCUIT ANALYSIS COMPLETE\n\n" +
-                            $"Wires Created: {wiresCreated}\n" +
-                            $"Total Devices: {circuitManager.DeviceData.Count}\n" +
-                            $"Total Wire Length: {totalLength:F1} ft\n" +
-                            $"Total Load: {totalLoad:F3} A\n" +
-                            $"End-of-Line Voltage: {eolVoltage:F1} V\n" +
-                            $"Voltage Drop: {voltageDrop:F2} V ({voltageDropPercent:F1}%)\n\n" +
-                            $"STATUS: {status}";
-
-            TaskDialog.Show("Fire Alarm Circuit Analysis", summary);
-        }
-
-        public string GetSafeElementName(Element element, ElementId elementId, Document doc = null)
-        {
-            try
+            if (dgDevices.SelectedItem is DeviceListItem selectedItem)
             {
-                if (element != null)
+                var deviceId = circuitManager.MainCircuit.FirstOrDefault(id =>
+                    circuitManager.DeviceData[id].Name == selectedItem.Name.Replace("  └─ ", ""));
+
+                if (deviceId != null)
                 {
-                    string name = element.Name;
-                    if (!string.IsNullOrEmpty(name))
-                        return name;
-                    
-                    // Try getting name from type if instance name is empty
-                    try
-                    {
-                        var typeId = element.GetTypeId();
-                        if (typeId != null && typeId != ElementId.InvalidElementId && doc != null)
-                        {
-                            var elementType = doc.GetElement(typeId);
-                            if (elementType != null && !string.IsNullOrEmpty(elementType.Name))
-                                return elementType.Name;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Failed to get type name: {ex.Message}");
-                    }
-                    
-                    // Try getting from category
-                    try
-                    {
-                        if (element.Category?.Name != null)
-                            return $"{element.Category.Name}_{elementId?.IntegerValue ?? 0}";
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Failed to get category name: {ex.Message}");
-                    }
+                    circuitManager.StartBranchFromDevice(deviceId);
+                    lblMode.Text = "T-TAP MODE";
+                    lblStatusMessage.Text = $"Creating {circuitManager.BranchNames[deviceId]}. Select devices to add.";
+
+                    isSelecting = true;
+                    btnStartSelection.Content = "STOP SELECTION";
+                    btnStartSelection.IsEnabled = true;
+                    updateTimer.Start();
+                    UpdateDisplay();
                 }
             }
-            catch (Exception ex)
+            else
             {
-                System.Diagnostics.Debug.WriteLine($"GetSafeElementName failed: {ex.Message}");
-            }
-            
-            // Final fallback
-            return $"Device_{elementId?.IntegerValue ?? 0}";
-        }
-        
-        /// <summary>
-        /// Safe method to add device to circuit - called from proper API context
-        /// </summary>
-        public void AddDeviceToCircuit(ElementId elementId, DeviceData deviceData)
-        {
-            try
-            {
-                if (circuitManager == null)
-                {
-                    // Initialize circuit manager with current parameters
-                    this.Dispatcher.Invoke(() => {
-                        var parameters = GetParameters();
-                        circuitManager = new CircuitManager(parameters);
-                    });
-                }
-                
-                if (circuitManager.Mode == "main")
-                {
-                    circuitManager.AddDeviceToMain(elementId, deviceData);
-                    
-                    // Update status on UI thread
-                    this.Dispatcher.BeginInvoke(new Action(() => {
-                        lblStatusMessage.Text = $"Added '{deviceData.Name}' to main circuit.";
-                    }));
-                }
-                else
-                {
-                    circuitManager.AddDeviceToBranch(elementId, deviceData);
-                    
-                    // Update status on UI thread
-                    this.Dispatcher.BeginInvoke(new Action(() => {
-                        lblStatusMessage.Text = $"Added '{deviceData.Name}' to T-tap branch.";
-                    }));
-                }
-                
-                // Update UI on main thread
-                this.Dispatcher.BeginInvoke(new Action(() => {
-                    try
-                    {
-                        UpdateDisplay();
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"UpdateDisplay failed: {ex.Message}");
-                    }
-                }));
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"AddDeviceToCircuit failed: {ex.Message}");
-                
-                // Update error message on UI thread
-                this.Dispatcher.BeginInvoke(new Action(() => {
-                    lblStatusMessage.Text = $"Error adding device: {ex.Message}";
-                }));
-            }
-        }
-        
-        /// <summary>
-        /// Store original override for later restoration
-        /// </summary>
-        public void StoreOriginalOverride(ElementId elementId, OverrideGraphicSettings originalOverride)
-        {
-            try
-            {
-                if (circuitManager?.OriginalOverrides != null && !circuitManager.OriginalOverrides.ContainsKey(elementId))
-                {
-                    circuitManager.OriginalOverrides[elementId] = originalOverride;
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"StoreOriginalOverride failed: {ex.Message}");
-            }
-        }
-
-        public void AddDeviceDirectly(Element element, ElementId elementId, Document doc)
-        {
-            try
-            {
-                if (circuitManager == null)
-                {
-                    var parameters = GetParameters();
-                    circuitManager = new CircuitManager(parameters);
-                }
-
-                // Get device data
-                var connector = GetElectricalConnector(element);
-                var currentData = GetCurrentDraw(element, doc) ?? new CurrentData { Alarm = 0.030, Standby = 0.030 };
-                var name = GetSafeElementName(element, elementId, doc);
-
-                var deviceData = new DeviceData
-                {
-                    Element = element,
-                    Connector = connector,
-                    Current = currentData,
-                    Name = name
-                };
-
-                // Add to circuit
-                if (circuitManager.Mode == "main")
-                {
-                    circuitManager.AddDeviceToMain(elementId, deviceData);
-                }
-                else
-                {
-                    circuitManager.AddDeviceToBranch(elementId, deviceData);
-                }
-
-                // Apply visual override
-                var activeView = doc?.ActiveView;
-                if (activeView != null)
-                {
-                    var originalOverride = activeView.GetElementOverrides(elementId);
-                    StoreOriginalOverride(elementId, originalOverride);
-
-                    var newOverride = circuitManager.Mode == "main" ? GetSelectedOverride() : GetBranchOverride();
-                    if (newOverride != null)
-                    {
-                        activeView.SetElementOverrides(elementId, newOverride);
-                    }
-                }
-
-                // Update UI
-                Dispatcher.BeginInvoke(new Action(() => UpdateDisplay()));
-            }
-            catch (Exception ex)
-            {
-                TaskDialog.Show("Error", $"Failed to process device: {ex.Message}");
-            }
-        }
-        
-        /// <summary>
-        /// Get the selected override settings for main circuit devices
-        /// </summary>
-        public OverrideGraphicSettings GetSelectedOverride()
-        {
-            return selectedOverride;
-        }
-        
-        /// <summary>
-        /// Get the branch override settings for T-tap devices
-        /// </summary>
-        public OverrideGraphicSettings GetBranchOverride()
-        {
-            return branchOverride;
-        }
-
-        public Connector GetElectricalConnector(Element element)
-        {
-            try
-            {
-                if (element == null)
-                    return null;
-
-                // CRITICAL: Follow official Revit API MEP connector access patterns
-                
-                // Method 1: FamilyInstance with MEPModel (most common for fire alarm devices)
-                if (element is FamilyInstance familyInstance)
-                {
-                    try
-                    {
-                        // Official pattern: Check MEPModel first, then ConnectorManager
-                        var mepModel = familyInstance.MEPModel;
-                        if (mepModel != null)
-                        {
-                            var connectorManager = mepModel.ConnectorManager;
-                            if (connectorManager != null)
-                            {
-                                try
-                                {
-                                    var connectorSet = connectorManager.Connectors;
-                                    if (connectorSet != null && connectorSet.Size > 0)
-                                    {
-                                        foreach (Connector connector in connectorSet)
-                                        {
-                                            try
-                                            {
-                                                // Safe connector access with proper checks
-                                                if (connector != null && 
-                                                    connector.IsValidObject && 
-                                                    connector.Domain == Domain.DomainElectrical)
-                                                {
-                                                    return connector;
-                                                }
-                                            }
-                                            catch (Autodesk.Revit.Exceptions.InvalidOperationException)
-                                            {
-                                                // Connector may be invalid/deleted - skip safely
-                                                continue;
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                System.Diagnostics.Debug.WriteLine($"Connector validation failed: {ex.Message}");
-                                                continue;
-                                            }
-                                        }
-                                    }
-                                }
-                                catch (Autodesk.Revit.Exceptions.InvalidOperationException)
-                                {
-                                    // ConnectorSet may be invalid - this is common and not an error
-                                    System.Diagnostics.Debug.WriteLine("ConnectorSet invalid - element may not have connectors");
-                                }
-                            }
-                        }
-                    }
-                    catch (Autodesk.Revit.Exceptions.InvalidOperationException)
-                    {
-                        // MEPModel may be null or invalid for non-MEP family instances
-                        System.Diagnostics.Debug.WriteLine("MEPModel invalid - element is not an MEP family instance");
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"FamilyInstance MEP access failed: {ex.Message}");
-                    }
-                }
-
-                // Method 2: Direct MEPCurve access (pipes, ducts, etc.)
-                if (element is MEPCurve mepCurve)
-                {
-                    try
-                    {
-                        var connectorManager = mepCurve.ConnectorManager;
-                        if (connectorManager?.Connectors != null)
-                        {
-                            foreach (Connector connector in connectorManager.Connectors)
-                            {
-                                try
-                                {
-                                    if (connector?.IsValidObject == true && 
-                                        connector.Domain == Domain.DomainElectrical)
-                                    {
-                                        return connector;
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    System.Diagnostics.Debug.WriteLine($"MEPCurve connector check failed: {ex.Message}");
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"MEPCurve connector access failed: {ex.Message}");
-                    }
-                }
-
-                // Method 3: Wire direct access
-                if (element is Wire wire)
-                {
-                    try
-                    {
-                        var connectorManager = wire.ConnectorManager;
-                        if (connectorManager?.Connectors != null)
-                        {
-                            foreach (Connector connector in connectorManager.Connectors)
-                            {
-                                try
-                                {
-                                    if (connector?.IsValidObject == true)
-                                    {
-                                        return connector;
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    System.Diagnostics.Debug.WriteLine($"Wire connector check failed: {ex.Message}");
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Wire connector access failed: {ex.Message}");
-                    }
-                }
-
-                // No connectors found - this is normal for many electrical elements
-                return null;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"GetElectricalConnector critical failure: {ex.Message}");
-                return null;
-            }
-        }
-
-        public CurrentData GetCurrentDraw(Element element, Document doc = null)
-        {
-            var currentData = new CurrentData { Alarm = 0.030, Standby = 0.030, Found = false }; // Default to 30mA
-
-            try
-            {
-                if (element?.Parameters == null)
-                    return currentData;
-
-                // Check instance parameters first
-                foreach (Parameter param in element.Parameters)
-                {
-                    try
-                    {
-                        if (param?.Definition?.Name != null && param.HasValue)
-                        {
-                            string paramName = param.Definition.Name.ToUpper();
-
-                            if (paramName.Contains("CURRENT"))
-                            {
-                                if (param.StorageType == StorageType.String)
-                                {
-                                    string valueStr = param.AsString()?.ToUpper();
-                                    if (!string.IsNullOrEmpty(valueStr))
-                                    {
-                                        var match = System.Text.RegularExpressions.Regex.Match(valueStr, @"[\d.]+");
-                                        if (match.Success && double.TryParse(match.Value, out double value))
-                                        {
-                                            if (valueStr.Contains("MA"))
-                                                value /= 1000.0;
-
-                                            if (paramName.Contains("ALARM"))
-                                            {
-                                                currentData.Alarm = Math.Max(value, 0.001); // Minimum 1mA
-                                                currentData.Found = true;
-                                            }
-                                            else if (paramName.Contains("STANDBY"))
-                                            {
-                                                currentData.Standby = Math.Max(value, 0.001);
-                                                currentData.Found = true;
-                                            }
-                                            else if (paramName.Contains("DRAW"))
-                                            {
-                                                currentData.Alarm = Math.Max(value, 0.001);
-                                                currentData.Found = true;
-                                            }
-                                        }
-                                    }
-                                }
-                                else if (param.StorageType == StorageType.Double)
-                                {
-                                    double value = param.AsDouble();
-                                    if (value > 0)
-                                    {
-                                        if (paramName.Contains("ALARM"))
-                                        {
-                                            currentData.Alarm = Math.Max(value, 0.001);
-                                            currentData.Found = true;
-                                        }
-                                        else if (paramName.Contains("STANDBY"))
-                                        {
-                                            currentData.Standby = Math.Max(value, 0.001);
-                                            currentData.Found = true;
-                                        }
-                                        else if (paramName.Contains("DRAW"))
-                                        {
-                                            currentData.Alarm = Math.Max(value, 0.001);
-                                            currentData.Found = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        // Skip problematic parameters
-                        continue;
-                    }
-                }
-
-                // Check type parameters if not found
-                if (!currentData.Found)
-                {
-                    try
-                    {
-                        var typeId = element.GetTypeId();
-                        if (typeId != null && typeId != ElementId.InvalidElementId && doc != null)
-                        {
-                            var elemType = doc.GetElement(typeId);
-                            if (elemType?.Parameters != null)
-                            {
-                                foreach (Parameter param in elemType.Parameters)
-                                {
-                                    try
-                                    {
-                                        if (param?.Definition?.Name != null && param.HasValue)
-                                        {
-                                            string paramName = param.Definition.Name.ToUpper();
-                                            if (paramName.Contains("CURRENT"))
-                                            {
-                                                // Similar parsing logic for type parameters
-                                                if (param.StorageType == StorageType.String)
-                                                {
-                                                    string valueStr = param.AsString()?.ToUpper();
-                                                    if (!string.IsNullOrEmpty(valueStr))
-                                                    {
-                                                        var match = System.Text.RegularExpressions.Regex.Match(valueStr, @"[\d.]+");
-                                                        if (match.Success && double.TryParse(match.Value, out double value))
-                                                        {
-                                                            if (valueStr.Contains("MA"))
-                                                                value /= 1000.0;
-
-                                                            currentData.Alarm = Math.Max(value, 0.001);
-                                                            currentData.Found = true;
-                                                            break;
-                                                        }
-                                                    }
-                                                }
-                                                else if (param.StorageType == StorageType.Double)
-                                                {
-                                                    double value = param.AsDouble();
-                                                    if (value > 0)
-                                                    {
-                                                        currentData.Alarm = Math.Max(value, 0.001);
-                                                        currentData.Found = true;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    catch
-                                    {
-                                        continue;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        // Type parameter check failed - use defaults
-                    }
-                }
-            }
-            catch
-            {
-                // Complete failure - return safe defaults
-                currentData = new CurrentData { Alarm = 0.030, Standby = 0.030, Found = false };
-            }
-
-            return currentData;
-        }
-
-        private void BtnExpandAll_Click(object sender, RoutedEventArgs e)
-        {
-            foreach (TreeViewItem item in tvCircuit.Items)
-            {
-                ExpandAllItems(item);
-            }
-        }
-
-        private void BtnCollapseAll_Click(object sender, RoutedEventArgs e)
-        {
-            foreach (TreeViewItem item in tvCircuit.Items)
-            {
-                CollapseAllItems(item);
-            }
-        }
-
-        private void ExpandAllItems(TreeViewItem item)
-        {
-            item.IsExpanded = true;
-            foreach (TreeViewItem child in item.Items.OfType<TreeViewItem>())
-            {
-                ExpandAllItems(child);
-            }
-        }
-
-        private void CollapseAllItems(TreeViewItem item)
-        {
-            item.IsExpanded = false;
-            foreach (TreeViewItem child in item.Items.OfType<TreeViewItem>())
-            {
-                CollapseAllItems(child);
+                TaskDialog.Show("Selection Required", "Please select a device from the list to create a T-tap branch.");
             }
         }
 
@@ -1873,7 +1030,6 @@ namespace FireAlarmCircuitAnalysis.Views
             
             try
             {
-                // Prompt for circuit name
                 var nameDialog = new SaveCircuitDialog();
                 nameDialog.Owner = this;
                 
@@ -1881,7 +1037,6 @@ namespace FireAlarmCircuitAnalysis.Views
                 {
                     var config = circuitManager.SaveConfiguration(nameDialog.CircuitName, nameDialog.Description);
                     lblStatusMessage.Text = $"Circuit '{config.Name}' saved successfully.";
-                    
                     TaskDialog.Show("Save Complete", $"Circuit '{config.Name}' has been saved to the repository.");
                 }
             }
@@ -1890,7 +1045,7 @@ namespace FireAlarmCircuitAnalysis.Views
                 TaskDialog.Show("Save Error", $"Failed to save circuit: {ex.Message}");
             }
         }
-        
+
         private void BtnLoadCircuit_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -1900,21 +1055,14 @@ namespace FireAlarmCircuitAnalysis.Views
                 
                 if (loadDialog.ShowDialog() == true && loadDialog.SelectedConfiguration != null)
                 {
-                    // Clear current overrides first using external event if needed
                     if (circuitManager != null && circuitManager.OriginalOverrides.Count > 0)
                     {
-                        // Store the configuration to load after clearing
                         var configToLoad = loadDialog.SelectedConfiguration;
-                        
-                        // Clear the circuit first
                         lblStatusMessage.Text = "Clearing current circuit...";
                         clearCircuitEvent.Raise();
                         
-                        // Schedule the load after clear is complete
-                        // This will be handled in OnCircuitClearComplete callback
                         System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
                             new Action(() => {
-                                // Load the configuration
                                 if (circuitManager == null)
                                 {
                                     var parameters = GetParameters();
@@ -1922,21 +1070,17 @@ namespace FireAlarmCircuitAnalysis.Views
                                 }
                                 
                                 circuitManager.LoadConfiguration(configToLoad);
-                                
-                                // Update UI
                                 UpdateDisplay();
                                 lblStatusMessage.Text = $"Loaded circuit '{configToLoad.Name}'.";
                                 btnSaveCircuit.IsEnabled = true;
                                 btnValidate.IsEnabled = true;
                                 btnExport.IsEnabled = true;
-                                
                                 TaskDialog.Show("Load Complete", $"Circuit '{configToLoad.Name}' has been loaded.");
                             }),
                             System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                     }
                     else
                     {
-                        // No overrides to clear, load directly
                         if (circuitManager == null)
                         {
                             var parameters = GetParameters();
@@ -1944,14 +1088,11 @@ namespace FireAlarmCircuitAnalysis.Views
                         }
                         
                         circuitManager.LoadConfiguration(loadDialog.SelectedConfiguration);
-                        
-                        // Update UI
                         UpdateDisplay();
                         lblStatusMessage.Text = $"Loaded circuit '{loadDialog.SelectedConfiguration.Name}'.";
                         btnSaveCircuit.IsEnabled = true;
                         btnValidate.IsEnabled = true;
                         btnExport.IsEnabled = true;
-                        
                         TaskDialog.Show("Load Complete", $"Circuit '{loadDialog.SelectedConfiguration.Name}' has been loaded.");
                     }
                 }
@@ -1992,10 +1133,8 @@ namespace FireAlarmCircuitAnalysis.Views
 
         private void BtnRemoveDevice_Click(object sender, RoutedEventArgs e)
         {
-            // Handle removal from either tree view or list view
             if (svTreeView.Visibility == System.Windows.Visibility.Visible)
             {
-                // Tree view is active - check if a tree item is selected
                 var selectedTreeItem = tvCircuit.SelectedItem as TreeViewItem;
                 if (selectedTreeItem?.Tag is CircuitNode node)
                 {
@@ -2008,10 +1147,8 @@ namespace FireAlarmCircuitAnalysis.Views
             }
             else if (dgDevices.Visibility == System.Windows.Visibility.Visible)
             {
-                // List view is active - check if a grid item is selected
                 if (dgDevices.SelectedItem is DeviceListItem selectedItem)
                 {
-                    // Find the corresponding node by name and remove it
                     var allNodes = circuitManager?.RootNode?.GetAllNodes()
                         .Where(n => n.NodeType == "Device" && n.Name == selectedItem.Name.Trim(' ', '└', '─'))
                         .FirstOrDefault();
@@ -2032,24 +1169,91 @@ namespace FireAlarmCircuitAnalysis.Views
             }
         }
 
+        private void RemoveNodeFromCircuit(CircuitNode node)
+        {
+            if (node?.ElementId == null) return;
+            
+            var result = TaskDialog.Show("Remove Device", 
+                $"Remove '{node.Name}' from circuit?", 
+                TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No);
+                
+            if (result == TaskDialogResult.Yes)
+            {
+                removeDeviceHandler.DeviceId = node.ElementId;
+                removeDeviceHandler.DeviceName = node.Name;
+                lblStatusMessage.Text = "Removing device...";
+                removeDeviceEvent.Raise();
+            }
+        }
+
+        public void OnDeviceRemovalComplete(string deviceName, string errorMessage)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    lblStatusMessage.Text = errorMessage;
+                    TaskDialog.Show("Error", errorMessage);
+                }
+                else
+                {
+                    lblStatusMessage.Text = $"Removed '{deviceName}' from circuit.";
+                }
+                
+                UpdateDisplay();
+            });
+        }
+
         private void BtnToggleView_Click(object sender, RoutedEventArgs e)
         {
             var button = sender as Button;
             if (button?.Name == "btnTreeView")
             {
-                // Switch to Tree View
                 svTreeView.Visibility = System.Windows.Visibility.Visible;
                 dgDevices.Visibility = System.Windows.Visibility.Collapsed;
-                btnTreeView.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(44, 62, 80)); // #2C3E50
+                btnTreeView.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(44, 62, 80));
                 btnListView.Background = new SolidColorBrush(Colors.Transparent);
             }
             else if (button?.Name == "btnListView")
             {
-                // Switch to List View
                 svTreeView.Visibility = System.Windows.Visibility.Collapsed;
                 dgDevices.Visibility = System.Windows.Visibility.Visible;
-                btnListView.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(44, 62, 80)); // #2C3E50
+                btnListView.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(44, 62, 80));
                 btnTreeView.Background = new SolidColorBrush(Colors.Transparent);
+            }
+        }
+
+        private void BtnExpandAll_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (TreeViewItem item in tvCircuit.Items)
+            {
+                ExpandAllItems(item);
+            }
+        }
+
+        private void BtnCollapseAll_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (TreeViewItem item in tvCircuit.Items)
+            {
+                CollapseAllItems(item);
+            }
+        }
+
+        private void ExpandAllItems(TreeViewItem item)
+        {
+            item.IsExpanded = true;
+            foreach (TreeViewItem child in item.Items.OfType<TreeViewItem>())
+            {
+                ExpandAllItems(child);
+            }
+        }
+
+        private void CollapseAllItems(TreeViewItem item)
+        {
+            item.IsExpanded = false;
+            foreach (TreeViewItem child in item.Items.OfType<TreeViewItem>())
+            {
+                CollapseAllItems(child);
             }
         }
 
@@ -2060,7 +1264,7 @@ namespace FireAlarmCircuitAnalysis.Views
                 TaskDialog.Show("Device Info", $"Device: {selectedItem.Name}\nCurrent: {selectedItem.Current}\nVoltage: {selectedItem.Voltage}");
             }
         }
-
+        
         public void Dispose()
         {
             Dispose(true);
@@ -2071,13 +1275,11 @@ namespace FireAlarmCircuitAnalysis.Views
         {
             if (disposing)
             {
-                // Stop selection
                 if (isSelecting)
                 {
                     EndSelection();
                 }
                 
-                // Dispose all external events
                 selectionEvent?.Dispose();
                 selectionEvent = null;
                 selectionHandler = null;
@@ -2094,26 +1296,18 @@ namespace FireAlarmCircuitAnalysis.Views
                 clearCircuitEvent = null;
                 clearCircuitHandler = null;
                 
-                // Dispose managed resources
                 updateTimer?.Stop();
                 updateTimer = null;
                 
-                // Note: Cannot use transactions in Dispose as we may not be in valid API context
-                // Overrides will be cleared next time Revit is in a valid state
-                // This is acceptable as the window is closing anyway
-                
-                // Clear circuit manager
                 circuitManager?.Clear();
                 circuitManager = null;
                 
-                // Clear UI references
                 if (tvCircuit != null)
                     tvCircuit.Items.Clear();
                 if (dgDevices != null)
                     dgDevices.ItemsSource = null;
             }
         }
-
     }
 
     /// <summary>

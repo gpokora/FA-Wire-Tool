@@ -21,6 +21,7 @@ C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\FireAlarmCircuitAnalysis_M
 C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\FireAlarmCircuitAnalysis.g.resources
 C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\FireAlarmCircuitAnalysis.GeneratedMSBuildEditorConfig.editorconfig
 C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\FireAlarmCircuitAnalysis.csproj.CoreCompileInputs.cache
+C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\FireAlarmCircuitAnalysis.sourcelink.json
 C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\FireAlar.8337D1D3.Up2Date
 C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\FireAlarmCircuitAnalysis.dll
 C:\Users\grego\source\repos\WpfApp1\WpfApp1\obj\Debug\FireAlarmCircuitAnalysis.pdb

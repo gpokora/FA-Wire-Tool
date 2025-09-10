@@ -73,6 +73,22 @@ namespace FireAlarmCircuitAnalysis
 
                 PushButton settingsButton = panel.AddItem(settingsButtonData) as PushButton;
 
+                // Add separator
+                panel.AddSeparator();
+
+                // Create device selection button
+                PushButtonData selectionButtonData = new PushButtonData(
+                    "DeviceSelection",
+                    "Select\nDevices",
+                    assemblyPath,
+                    "FireAlarmCircuitAnalysis.DeviceSelectionCommand"
+                );
+
+                selectionButtonData.ToolTip = "Interactive fire alarm device selection";
+                selectionButtonData.LongDescription = "Select fire alarm devices interactively using proper Revit API patterns";
+
+                PushButton selectionButton = panel.AddItem(selectionButtonData) as PushButton;
+
                 // Create help button
                 PushButtonData helpButtonData = new PushButtonData(
                     "FireAlarmHelp",

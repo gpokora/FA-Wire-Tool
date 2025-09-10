@@ -5,6 +5,9 @@ using Autodesk.Revit.UI.Selection;
 
 namespace FireAlarmCircuitAnalysis
 {
+    /// <summary>
+    /// Single device selection like original working code and Python version
+    /// </summary>
     public class SelectionEventHandler : IExternalEventHandler
     {
         public Views.FireAlarmCircuitWindow Window { get; set; }

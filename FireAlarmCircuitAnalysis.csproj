@@ -90,6 +90,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="Samples\**" />
+    <EmbeddedResource Remove="Samples\**" />
+    <None Remove="Samples\**" />
+    <Page Remove="Samples\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Page Include="Views\FireAlarmCircuitWindow.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>

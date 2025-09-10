@@ -25,16 +25,29 @@ namespace FireAlarmCircuitAnalysis
                 ErrorMessage = null;
                 SuccessCount = 0;
 
+                // Validate critical parameters following SDK patterns
+                if (app?.ActiveUIDocument == null)
+                {
+                    ErrorMessage = "No active Revit document available.";
+                    return;
+                }
+
                 if (Window?.circuitManager == null || Window.circuitManager.MainCircuit.Count < 1)
                 {
                     ErrorMessage = "Need at least 1 device to create wires.";
                     return;
                 }
 
-                var doc = app.ActiveUIDocument?.Document;
+                var doc = app.ActiveUIDocument.Document;
                 if (doc == null)
                 {
-                    ErrorMessage = "No active Revit document found.";
+                    ErrorMessage = "Document is not available.";
+                    return;
+                }
+
+                if (doc.IsReadOnly)
+                {
+                    ErrorMessage = "Cannot create wires in a read-only document.";
                     return;
                 }
 
@@ -46,7 +59,7 @@ namespace FireAlarmCircuitAnalysis
                     {
                         SuccessCount = CreateCircuitWires(doc, Window.circuitManager);
                         
-                        // Restore original overrides
+                        // Restore original overrides with proper error handling
                         var activeView = app.ActiveUIDocument.ActiveView;
                         if (activeView != null)
                         {
@@ -59,9 +72,17 @@ namespace FireAlarmCircuitAnalysis
                                         activeView.SetElementOverrides(kvp.Key, kvp.Value);
                                     }
                                 }
+                                catch (Autodesk.Revit.Exceptions.InvalidOperationException)
+                                {
+                                    // Element may no longer exist - skip
+                                }
+                                catch (Autodesk.Revit.Exceptions.ApplicationException)
+                                {
+                                    // Override operation failed - skip
+                                }
                                 catch
                                 {
-                                    // Skip problematic override restoration
+                                    // Any other error - skip problematic override restoration
                                 }
                             }
                         }
@@ -69,12 +90,39 @@ namespace FireAlarmCircuitAnalysis
                         doc.Regenerate();
                         trans.Commit();
                     }
+                    catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
+                    {
+                        trans.RollBack();
+                        ErrorMessage = $"Invalid Revit operation creating wires: {ex.Message}";
+                    }
+                    catch (Autodesk.Revit.Exceptions.ApplicationException ex)
+                    {
+                        trans.RollBack();
+                        ErrorMessage = $"Revit application error creating wires: {ex.Message}";
+                    }
+                    catch (System.UnauthorizedAccessException ex)
+                    {
+                        trans.RollBack();
+                        ErrorMessage = $"Access denied creating wires: {ex.Message}";
+                    }
                     catch (Exception ex)
                     {
                         trans.RollBack();
                         ErrorMessage = $"Failed to create wires: {ex.Message}";
                     }
                 }
+            }
+            catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
+            {
+                ErrorMessage = $"Invalid Revit operation: {ex.Message}";
+            }
+            catch (Autodesk.Revit.Exceptions.ApplicationException ex)
+            {
+                ErrorMessage = $"Revit application error: {ex.Message}";
+            }
+            catch (System.UnauthorizedAccessException ex)
+            {
+                ErrorMessage = $"Access denied: {ex.Message}";
             }
             catch (Exception ex)
             {
@@ -193,16 +241,29 @@ namespace FireAlarmCircuitAnalysis
                 IsExecuting = true;
                 ErrorMessage = null;
 
+                // Validate critical parameters following SDK patterns
+                if (app?.ActiveUIDocument == null)
+                {
+                    ErrorMessage = "No active Revit document available.";
+                    return;
+                }
+
                 if (DeviceId == null || Window?.circuitManager == null)
                 {
                     ErrorMessage = "Invalid device or circuit manager.";
                     return;
                 }
 
-                var doc = app.ActiveUIDocument?.Document;
+                var doc = app.ActiveUIDocument.Document;
                 if (doc == null)
                 {
-                    ErrorMessage = "No active Revit document found.";
+                    ErrorMessage = "Document is not available.";
+                    return;
+                }
+
+                if (doc.IsReadOnly)
+                {
+                    ErrorMessage = "Cannot remove device from a read-only document.";
                     return;
                 }
 
@@ -215,17 +276,45 @@ namespace FireAlarmCircuitAnalysis
                         // Remove from circuit manager
                         var (location, position) = Window.circuitManager.RemoveDevice(DeviceId);
 
-                        // Clear overrides
+                        // Clear overrides with proper error handling
                         var activeView = app.ActiveUIDocument.ActiveView;
                         if (activeView != null && Window.circuitManager.OriginalOverrides.ContainsKey(DeviceId))
                         {
-                            var originalOverride = Window.circuitManager.OriginalOverrides[DeviceId];
-                            activeView.SetElementOverrides(DeviceId, originalOverride ?? new OverrideGraphicSettings());
-                            Window.circuitManager.OriginalOverrides.Remove(DeviceId);
+                            try
+                            {
+                                var originalOverride = Window.circuitManager.OriginalOverrides[DeviceId];
+                                activeView.SetElementOverrides(DeviceId, originalOverride ?? new OverrideGraphicSettings());
+                                Window.circuitManager.OriginalOverrides.Remove(DeviceId);
+                            }
+                            catch (Autodesk.Revit.Exceptions.InvalidOperationException)
+                            {
+                                // Element may no longer exist - continue with removal
+                                Window.circuitManager.OriginalOverrides.Remove(DeviceId);
+                            }
+                            catch (Autodesk.Revit.Exceptions.ApplicationException)
+                            {
+                                // Override operation failed - continue with removal
+                                Window.circuitManager.OriginalOverrides.Remove(DeviceId);
+                            }
                         }
 
                         doc.Regenerate();
                         trans.Commit();
+                    }
+                    catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
+                    {
+                        trans.RollBack();
+                        ErrorMessage = $"Invalid Revit operation removing device: {ex.Message}";
+                    }
+                    catch (Autodesk.Revit.Exceptions.ApplicationException ex)
+                    {
+                        trans.RollBack();
+                        ErrorMessage = $"Revit application error removing device: {ex.Message}";
+                    }
+                    catch (System.UnauthorizedAccessException ex)
+                    {
+                        trans.RollBack();
+                        ErrorMessage = $"Access denied removing device: {ex.Message}";
                     }
                     catch (Exception ex)
                     {
@@ -233,6 +322,18 @@ namespace FireAlarmCircuitAnalysis
                         ErrorMessage = $"Failed to remove device: {ex.Message}";
                     }
                 }
+            }
+            catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
+            {
+                ErrorMessage = $"Invalid Revit operation: {ex.Message}";
+            }
+            catch (Autodesk.Revit.Exceptions.ApplicationException ex)
+            {
+                ErrorMessage = $"Revit application error: {ex.Message}";
+            }
+            catch (System.UnauthorizedAccessException ex)
+            {
+                ErrorMessage = $"Access denied: {ex.Message}";
             }
             catch (Exception ex)
             {
@@ -267,16 +368,29 @@ namespace FireAlarmCircuitAnalysis
                 IsExecuting = true;
                 ErrorMessage = null;
 
+                // Validate critical parameters following SDK patterns
+                if (app?.ActiveUIDocument == null)
+                {
+                    ErrorMessage = "No active Revit document available.";
+                    return;
+                }
+
                 if (Window?.circuitManager == null)
                 {
                     ErrorMessage = "No circuit manager found.";
                     return;
                 }
 
-                var doc = app.ActiveUIDocument?.Document;
+                var doc = app.ActiveUIDocument.Document;
                 if (doc == null)
                 {
-                    ErrorMessage = "No active Revit document found.";
+                    ErrorMessage = "Document is not available.";
+                    return;
+                }
+
+                if (doc.IsReadOnly)
+                {
+                    ErrorMessage = "Cannot clear circuit in a read-only document.";
                     return;
                 }
 
@@ -286,7 +400,7 @@ namespace FireAlarmCircuitAnalysis
 
                     try
                     {
-                        // Restore all original overrides
+                        // Restore all original overrides with proper error handling
                         var activeView = app.ActiveUIDocument.ActiveView;
                         if (activeView != null)
                         {
@@ -299,9 +413,17 @@ namespace FireAlarmCircuitAnalysis
                                         activeView.SetElementOverrides(kvp.Key, kvp.Value ?? new OverrideGraphicSettings());
                                     }
                                 }
+                                catch (Autodesk.Revit.Exceptions.InvalidOperationException)
+                                {
+                                    // Element may no longer exist - skip
+                                }
+                                catch (Autodesk.Revit.Exceptions.ApplicationException)
+                                {
+                                    // Override operation failed - skip
+                                }
                                 catch
                                 {
-                                    // Skip problematic override restoration
+                                    // Any other error - skip problematic override restoration
                                 }
                             }
                         }
@@ -312,12 +434,39 @@ namespace FireAlarmCircuitAnalysis
                         doc.Regenerate();
                         trans.Commit();
                     }
+                    catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
+                    {
+                        trans.RollBack();
+                        ErrorMessage = $"Invalid Revit operation clearing circuit: {ex.Message}";
+                    }
+                    catch (Autodesk.Revit.Exceptions.ApplicationException ex)
+                    {
+                        trans.RollBack();
+                        ErrorMessage = $"Revit application error clearing circuit: {ex.Message}";
+                    }
+                    catch (System.UnauthorizedAccessException ex)
+                    {
+                        trans.RollBack();
+                        ErrorMessage = $"Access denied clearing circuit: {ex.Message}";
+                    }
                     catch (Exception ex)
                     {
                         trans.RollBack();
                         ErrorMessage = $"Failed to clear circuit: {ex.Message}";
                     }
                 }
+            }
+            catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
+            {
+                ErrorMessage = $"Invalid Revit operation: {ex.Message}";
+            }
+            catch (Autodesk.Revit.Exceptions.ApplicationException ex)
+            {
+                ErrorMessage = $"Revit application error: {ex.Message}";
+            }
+            catch (System.UnauthorizedAccessException ex)
+            {
+                ErrorMessage = $"Access denied: {ex.Message}";
             }
             catch (Exception ex)
             {
