@@ -223,6 +223,9 @@
                                 <Button Content="List View" Name="btnListView" Click="BtnToggleView_Click"
                                        Margin="2" Padding="8,2" Background="Transparent"
                                        Foreground="White" BorderThickness="1" BorderBrush="White"/>
+                                <Button Content="Schematic" Name="btnSchematicView" Click="BtnToggleView_Click"
+                                       Margin="2" Padding="8,2" Background="Transparent"
+                                       Foreground="White" BorderThickness="1" BorderBrush="White"/>
                                 <Separator Background="White" Width="1" Margin="5,2"/>
                                 <Button Content="Expand All" Click="BtnExpandAll_Click"
                                        Margin="2" Padding="5,2" Background="Transparent"
@@ -281,6 +284,19 @@
                                 </Style>
                             </DataGrid.RowStyle>
                         </DataGrid>
+
+                        <!-- Schematic View -->
+                        <ScrollViewer Name="svSchematicView" VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto" Visibility="Collapsed"
+                                     CanContentScroll="True">
+                            <Canvas Name="circuitSchematicCanvas" Background="White" 
+                                   Width="1200" Height="600" Margin="10"
+                                   MouseLeftButtonDown="SchematicCanvas_MouseDown"
+                                   MouseMove="SchematicCanvas_MouseMove"
+                                   MouseLeave="SchematicCanvas_MouseLeave">
+                                <!-- Circuit elements will be drawn here programmatically -->
+                            </Canvas>
+                        </ScrollViewer>
                     </Grid>
 
                     <!-- Actions Panel -->

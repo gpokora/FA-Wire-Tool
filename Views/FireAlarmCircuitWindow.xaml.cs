@@ -436,6 +436,12 @@ namespace FireAlarmCircuitAnalysis.Views
                 UpdateDeviceGrid();
                 UpdateStatusDisplay();
                 UpdateSummaryPanel();
+                
+                // Update schematic view if it's visible
+                if (svSchematicView?.Visibility == System.Windows.Visibility.Visible)
+                {
+                    UpdateSchematicView();
+                }
             }
             catch (Exception ex)
             {
@@ -1028,19 +1034,41 @@ namespace FireAlarmCircuitAnalysis.Views
         private void BtnToggleView_Click(object sender, RoutedEventArgs e)
         {
             var button = sender as Button;
+            var activeColor = new SolidColorBrush(System.Windows.Media.Color.FromRgb(44, 62, 80));
+            var inactiveColor = new SolidColorBrush(Colors.Transparent);
+            
             if (button?.Name == "btnTreeView")
             {
                 svTreeView.Visibility = System.Windows.Visibility.Visible;
                 dgDevices.Visibility = System.Windows.Visibility.Collapsed;
-                btnTreeView.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(44, 62, 80));
-                btnListView.Background = new SolidColorBrush(Colors.Transparent);
+                svSchematicView.Visibility = System.Windows.Visibility.Collapsed;
+                
+                btnTreeView.Background = activeColor;
+                btnListView.Background = inactiveColor;
+                btnSchematicView.Background = inactiveColor;
             }
             else if (button?.Name == "btnListView")
             {
                 svTreeView.Visibility = System.Windows.Visibility.Collapsed;
                 dgDevices.Visibility = System.Windows.Visibility.Visible;
-                btnListView.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(44, 62, 80));
-                btnTreeView.Background = new SolidColorBrush(Colors.Transparent);
+                svSchematicView.Visibility = System.Windows.Visibility.Collapsed;
+                
+                btnListView.Background = activeColor;
+                btnTreeView.Background = inactiveColor;
+                btnSchematicView.Background = inactiveColor;
+            }
+            else if (button?.Name == "btnSchematicView")
+            {
+                svTreeView.Visibility = System.Windows.Visibility.Collapsed;
+                dgDevices.Visibility = System.Windows.Visibility.Collapsed;
+                svSchematicView.Visibility = System.Windows.Visibility.Visible;
+                
+                btnSchematicView.Background = activeColor;
+                btnTreeView.Background = inactiveColor;
+                btnListView.Background = inactiveColor;
+                
+                // Update the schematic when switching to it
+                UpdateSchematicView();
             }
         }
 
@@ -1208,6 +1236,276 @@ namespace FireAlarmCircuitAnalysis.Views
                 if (dgDevices != null)
                     dgDevices.ItemsSource = null;
             }
+        }
+
+        // ========================================
+        // SCHEMATIC VIEW METHODS
+        // ========================================
+
+        private void UpdateSchematicView()
+        {
+            if (circuitManager?.RootNode == null)
+            {
+                circuitSchematicCanvas.Children.Clear();
+                return;
+            }
+
+            circuitSchematicCanvas.Children.Clear();
+            DrawSchematicDiagram();
+        }
+
+        private void DrawSchematicDiagram()
+        {
+            const double startX = 50;
+            const double startY = 50;
+            const double deviceSpacing = 120;
+            const double branchOffset = 80;
+            double currentX = startX;
+
+            // Draw title
+            var title = new TextBlock
+            {
+                Text = "Fire Alarm Circuit Schematic",
+                FontSize = 16,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Colors.Black)
+            };
+            Canvas.SetLeft(title, 20);
+            Canvas.SetTop(title, 10);
+            circuitSchematicCanvas.Children.Add(title);
+
+            // Start with the panel
+            DrawDevice(circuitManager.RootNode, startX, startY, Colors.Blue, true);
+            currentX += deviceSpacing;
+
+            // Draw main circuit chain
+            DrawMainCircuitChain(circuitManager.RootNode, ref currentX, startY, deviceSpacing, branchOffset);
+        }
+
+        private void DrawMainCircuitChain(CircuitNode node, ref double currentX, double currentY, double deviceSpacing, double branchOffset)
+        {
+            if (node?.Children == null) return;
+
+            double previousX = currentX - deviceSpacing;
+
+            foreach (var child in node.Children.Where(c => !c.IsBranchDevice))
+            {
+                // Draw wire from previous device
+                DrawWire(previousX + 25, currentY + 15, currentX - 5, currentY + 15, Colors.Black, child.DistanceFromParent);
+
+                // Draw main circuit device
+                DrawDevice(child, currentX, currentY, GetVoltageColor(child.Voltage), false);
+
+                // Draw T-tap branches from this device
+                DrawTTapBranches(child, currentX, currentY + branchOffset);
+
+                previousX = currentX;
+                currentX += deviceSpacing;
+
+                // Recursively draw children
+                DrawMainCircuitChain(child, ref currentX, currentY, deviceSpacing, branchOffset);
+                break; // Only follow first main circuit child (linear chain)
+            }
+        }
+
+        private void DrawTTapBranches(CircuitNode tapDevice, double tapX, double branchY)
+        {
+            if (tapDevice?.Children == null) return;
+
+            double branchX = tapX;
+            var branchChildren = tapDevice.Children.Where(c => c.IsBranchDevice).ToList();
+
+            if (branchChildren.Any())
+            {
+                // Draw vertical line down to branch level
+                DrawWire(tapX + 25, 50 + 30, tapX + 25, branchY - 15, Colors.Orange, 0);
+
+                foreach (var branchChild in branchChildren)
+                {
+                    // Draw horizontal line to branch device
+                    DrawWire(tapX + 25, branchY + 15, branchX - 5, branchY + 15, Colors.Orange, branchChild.DistanceFromParent);
+
+                    // Draw branch device
+                    DrawDevice(branchChild, branchX, branchY, GetVoltageColor(branchChild.Voltage), false, true);
+
+                    branchX += 100; // Space between branch devices
+
+                    // Draw branch chain continuation
+                    DrawBranchChain(branchChild, ref branchX, branchY);
+                }
+            }
+        }
+
+        private void DrawBranchChain(CircuitNode branchNode, ref double currentX, double currentY)
+        {
+            foreach (var child in branchNode.Children.Where(c => c.IsBranchDevice))
+            {
+                currentX += 100;
+
+                // Draw wire
+                DrawWire(currentX - 100 + 25, currentY + 15, currentX - 5, currentY + 15, Colors.Orange, child.DistanceFromParent);
+
+                // Draw device
+                DrawDevice(child, currentX, currentY, GetVoltageColor(child.Voltage), false, true);
+
+                // Continue chain
+                DrawBranchChain(child, ref currentX, currentY);
+                break; // Linear chain
+            }
+        }
+
+        private void DrawDevice(CircuitNode node, double x, double y, System.Windows.Media.Color color, bool isPanel, bool isBranch = false)
+        {
+            // Device rectangle
+            var rect = new System.Windows.Shapes.Rectangle
+            {
+                Width = 50,
+                Height = 30,
+                Fill = new SolidColorBrush(color),
+                Stroke = new SolidColorBrush(Colors.Black),
+                StrokeThickness = 2,
+                Tag = node
+            };
+
+            // Device label
+            var label = new TextBlock
+            {
+                Text = isPanel ? "PANEL" : (node.DeviceData?.Name?.Substring(0, Math.Min(8, node.DeviceData.Name.Length)) ?? "DEVICE"),
+                FontSize = 8,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Colors.White),
+                Tag = node
+            };
+
+            // Voltage/Current info
+            var info = new TextBlock
+            {
+                Text = isPanel ? $"{node.Voltage:F1}V" : $"{node.Voltage:F1}V\n[{node.DeviceData?.Current.Alarm:F3}A]",
+                FontSize = 9,
+                Foreground = new SolidColorBrush(Colors.Black),
+                Tag = node
+            };
+
+            // T-tap indicator
+            if (isBranch)
+            {
+                var ttapLabel = new TextBlock
+                {
+                    Text = "🔗",
+                    FontSize = 12,
+                    Tag = node
+                };
+                Canvas.SetLeft(ttapLabel, x - 15);
+                Canvas.SetTop(ttapLabel, y + 5);
+                circuitSchematicCanvas.Children.Add(ttapLabel);
+            }
+
+            Canvas.SetLeft(rect, x);
+            Canvas.SetTop(rect, y);
+            Canvas.SetLeft(label, x + 5);
+            Canvas.SetTop(label, y + 8);
+            Canvas.SetLeft(info, x + 5);
+            Canvas.SetTop(info, y - 25);
+
+            circuitSchematicCanvas.Children.Add(rect);
+            circuitSchematicCanvas.Children.Add(label);
+            circuitSchematicCanvas.Children.Add(info);
+
+            // Mouse events for interactivity
+            rect.MouseEnter += (s, e) => ShowDeviceTooltip(node, x, y);
+            rect.MouseLeave += (s, e) => HideDeviceTooltip();
+        }
+
+        private void DrawWire(double x1, double y1, double x2, double y2, System.Windows.Media.Color color, double distance)
+        {
+            var line = new System.Windows.Shapes.Line
+            {
+                X1 = x1,
+                Y1 = y1,
+                X2 = x2,
+                Y2 = y2,
+                Stroke = new SolidColorBrush(color),
+                StrokeThickness = 3
+            };
+
+            // Distance label
+            if (distance > 0)
+            {
+                var distLabel = new TextBlock
+                {
+                    Text = $"{distance:F1}ft",
+                    FontSize = 8,
+                    Foreground = new SolidColorBrush(Colors.DarkBlue),
+                    Background = new SolidColorBrush(Colors.White)
+                };
+                Canvas.SetLeft(distLabel, (x1 + x2) / 2 - 10);
+                Canvas.SetTop(distLabel, (y1 + y2) / 2 - 15);
+                circuitSchematicCanvas.Children.Add(distLabel);
+            }
+
+            circuitSchematicCanvas.Children.Add(line);
+        }
+
+        private System.Windows.Media.Color GetVoltageColor(double voltage)
+        {
+            if (voltage >= 28.0) return Colors.LightGreen;      // Good voltage
+            if (voltage >= 26.0) return Colors.Yellow;          // Warning
+            if (voltage >= 24.0) return Colors.Orange;          // Caution
+            return Colors.Red;                                   // Critical
+        }
+
+        private TextBlock tooltipTextBlock = null;
+        private double tapY = 50; // Store tap Y coordinate
+
+        private void ShowDeviceTooltip(CircuitNode node, double x, double y)
+        {
+            HideDeviceTooltip();
+
+            if (node?.DeviceData != null)
+            {
+                tooltipTextBlock = new TextBlock
+                {
+                    Text = $"{node.DeviceData.Name}\nVoltage: {node.Voltage:F2}V\nCurrent: {node.DeviceData.Current.Alarm:F3}A\nStatus: {node.Status}",
+                    Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(240, 255, 255, 224)),
+                    Foreground = new SolidColorBrush(Colors.Black),
+                    Padding = new Thickness(5),
+                    FontSize = 10,
+                    MaxWidth = 200
+                };
+
+                Canvas.SetLeft(tooltipTextBlock, x + 60);
+                Canvas.SetTop(tooltipTextBlock, y - 10);
+                Canvas.SetZIndex(tooltipTextBlock, 1000);
+                circuitSchematicCanvas.Children.Add(tooltipTextBlock);
+            }
+        }
+
+        private void HideDeviceTooltip()
+        {
+            if (tooltipTextBlock != null)
+            {
+                circuitSchematicCanvas.Children.Remove(tooltipTextBlock);
+                tooltipTextBlock = null;
+            }
+        }
+
+        private void SchematicCanvas_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            var element = e.OriginalSource as FrameworkElement;
+            if (element?.Tag is CircuitNode node && node.ElementId != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"Selected device in schematic: {node.Name}");
+            }
+        }
+
+        private void SchematicCanvas_MouseMove(object sender, MouseEventArgs e)
+        {
+            // Handle mouse move effects if needed
+        }
+
+        private void SchematicCanvas_MouseLeave(object sender, MouseEventArgs e)
+        {
+            HideDeviceTooltip();
         }
     }
 
