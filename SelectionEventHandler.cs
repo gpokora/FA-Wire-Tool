@@ -1,12 +1,14 @@
 using System;
+using System.Windows.Input;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Electrical;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
 
 namespace FireAlarmCircuitAnalysis
 {
     /// <summary>
-    /// Single device selection like original working code and Python version
+    /// Continuous device selection like Python version - with Shift+Click support
     /// </summary>
     public class SelectionEventHandler : IExternalEventHandler
     {
@@ -15,29 +17,339 @@ namespace FireAlarmCircuitAnalysis
 
         public void Execute(UIApplication app)
         {
-            // Simple single selection like Python code
+            if (!IsSelecting || Window?.circuitManager == null) return;
+
             try
             {
                 var uidoc = app.ActiveUIDocument;
+                var doc = uidoc.Document;
                 var filter = new FireAlarmFilter();
-                
-                var reference = uidoc.Selection.PickObject(ObjectType.Element, filter, "Select fire alarm device");
-                
-                if (reference?.ElementId != null)
+
+                // Continuous selection loop like Python version
+                while (IsSelecting)
                 {
-                    Window.Dispatcher.Invoke(() => Window.ProcessDeviceSelection(reference.ElementId));
+                    try
+                    {
+                        string prompt = Window.GetSelectionPrompt();
+                        var reference = uidoc.Selection.PickObject(ObjectType.Element, filter, prompt);
+
+                        if (reference?.ElementId != null)
+                        {
+                            var element = doc.GetElement(reference.ElementId);
+                            if (element != null)
+                            {
+                                // Check for Shift+Click (T-tap creation)
+                                bool shiftPressed = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+
+                                // Process device in proper Revit API context
+                                ProcessDeviceInRevitContext(app, element, shiftPressed);
+                            }
+                        }
+                    }
+                    catch (Autodesk.Revit.Exceptions.OperationCanceledException)
+                    {
+                        // User pressed ESC or right-clicked - handle mode transitions
+                        if (Window.circuitManager.Mode == "branch")
+                        {
+                            // Return to main circuit mode
+                            Window.circuitManager.Mode = "main";
+                            Window.circuitManager.ActiveTapPoint = null;
+
+                            Window.Dispatcher.Invoke(() => {
+                                Window.lblMode.Text = "MAIN CIRCUIT";
+                                Window.lblStatusMessage.Text = "Returned to main circuit. Continue selecting or ESC to finish.";
+                            });
+                            continue; // Continue selection in main mode
+                        }
+                        else
+                        {
+                            // End selection completely
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        TaskDialog.Show("Selection Error", ex.Message);
+                        break;
+                    }
                 }
-            }
-            catch (Autodesk.Revit.Exceptions.OperationCanceledException)
-            {
-                // User cancelled - that's fine
+
+                // Selection ended
+                IsSelecting = false;
+                Window?.Dispatcher.Invoke(() => Window.EndSelection());
             }
             catch (Exception ex)
             {
-                TaskDialog.Show("Selection Error", ex.Message);
+                IsSelecting = false;
+                TaskDialog.Show("Selection Handler Error", ex.Message);
+                Window?.Dispatcher.Invoke(() => Window.EndSelection());
             }
         }
 
-        public string GetName() => "Device Selection";
+        private void ProcessDeviceInRevitContext(UIApplication app, Element element, bool shiftPressed)
+        {
+            try
+            {
+                var elementId = element.Id;
+                var doc = app.ActiveUIDocument.Document;
+                var activeView = app.ActiveUIDocument.ActiveView;
+                var circuitManager = Window.circuitManager;
+
+                // Check if device already exists in circuit
+                bool deviceExists = circuitManager.DeviceData.ContainsKey(elementId);
+
+                // Handle Shift+Click for T-tap creation
+                if (shiftPressed && deviceExists && circuitManager.Mode == "main")
+                {
+                    // Create T-tap branch from existing device
+                    if (circuitManager.StartBranchFromDevice(elementId))
+                    {
+                        var branchName = circuitManager.BranchNames[elementId];
+                        Window.Dispatcher.Invoke(() => {
+                            Window.lblMode.Text = "T-TAP MODE";
+                            Window.lblStatusMessage.Text = $"Creating {branchName} from '{element.Name}'. Select devices for branch. ESC to return to main.";
+                        });
+                    }
+                    return;
+                }
+
+                // Remove device if already selected (toggle behavior)
+                if (deviceExists && !shiftPressed)
+                {
+                    using (Transaction trans = new Transaction(doc, "Remove Device"))
+                    {
+                        trans.Start();
+
+                        // Remove from circuit
+                        var (location, position) = circuitManager.RemoveDevice(elementId);
+
+                        // Restore original graphics
+                        if (circuitManager.OriginalOverrides.ContainsKey(elementId))
+                        {
+                            var original = circuitManager.OriginalOverrides[elementId];
+                            activeView.SetElementOverrides(elementId, original ?? new OverrideGraphicSettings());
+                            circuitManager.OriginalOverrides.Remove(elementId);
+                        }
+
+                        trans.Commit();
+                    }
+
+                    Window.Dispatcher.Invoke(() => {
+                        Window.lblStatusMessage.Text = $"Removed '{element.Name}' from {location}.";
+                        Window.UpdateDisplay();
+                    });
+                    return;
+                }
+
+                // Add new device to circuit
+                if (!deviceExists)
+                {
+                    // Get electrical connector - REAL extraction like Python
+                    Connector connector = GetElectricalConnector(element);
+                    if (connector == null)
+                    {
+                        Window.Dispatcher.Invoke(() => {
+                            Window.lblStatusMessage.Text = $"'{element.Name}' has no electrical connector.";
+                        });
+                        return;
+                    }
+
+                    // Extract current data - REAL extraction like Python
+                    var currentData = GetCurrentDraw(element, doc);
+
+                    // Create device data with REAL data
+                    var deviceData = new DeviceData
+                    {
+                        Element = element,
+                        Connector = connector,
+                        Current = currentData,
+                        Name = element.Name ?? $"Device {elementId.IntegerValue}",
+                        Location = connector.Origin
+                    };
+
+                    using (Transaction trans = new Transaction(doc, "Add Device"))
+                    {
+                        trans.Start();
+
+                        // Store original override
+                        if (!circuitManager.OriginalOverrides.ContainsKey(elementId))
+                        {
+                            var original = activeView.GetElementOverrides(elementId);
+                            circuitManager.OriginalOverrides[elementId] = original;
+                        }
+
+                        // Apply visual override based on mode
+                        var overrideSettings = new OverrideGraphicSettings();
+                        if (circuitManager.Mode == "main")
+                        {
+                            overrideSettings.SetHalftone(true);
+                            circuitManager.AddDeviceToMain(elementId, deviceData);
+                        }
+                        else // branch mode
+                        {
+                            overrideSettings.SetProjectionLineColor(new Color(255, 128, 0));
+                            overrideSettings.SetHalftone(true);
+                            circuitManager.AddDeviceToBranch(elementId, deviceData);
+                        }
+                        activeView.SetElementOverrides(elementId, overrideSettings);
+
+                        trans.Commit();
+                    }
+
+                    // Update UI
+                    Window.Dispatcher.Invoke(() => {
+                        string mode = circuitManager.Mode == "main" ? "main circuit" :
+                            circuitManager.BranchNames.GetValueOrDefault(circuitManager.ActiveTapPoint, "T-tap branch");
+                        Window.lblStatusMessage.Text = $"Added '{deviceData.Name}' to {mode}. Current: {currentData.Alarm:F3}A";
+                        Window.UpdateDisplay();
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Window.Dispatcher.Invoke(() => {
+                    Window.lblStatusMessage.Text = $"Error processing '{element.Name}': {ex.Message}";
+                });
+            }
+        }
+
+        private Connector GetElectricalConnector(Element element)
+        {
+            try
+            {
+                if (element is FamilyInstance fi && fi.MEPModel?.ConnectorManager != null)
+                {
+                    foreach (Connector conn in fi.MEPModel.ConnectorManager.Connectors)
+                    {
+                        if (conn.Domain == Domain.DomainElectrical)
+                            return conn;
+                    }
+                }
+
+                // Also check MEPCurve elements
+                if (element is MEPCurve mepCurve && mepCurve.ConnectorManager != null)
+                {
+                    foreach (Connector conn in mepCurve.ConnectorManager.Connectors)
+                    {
+                        if (conn.Domain == Domain.DomainElectrical)
+                            return conn;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"GetElectricalConnector failed: {ex.Message}");
+            }
+            return null;
+        }
+
+        private CurrentData GetCurrentDraw(Element element, Document doc)
+        {
+            var currentData = new CurrentData { Alarm = 0.030, Standby = 0.030, Found = false };
+
+            try
+            {
+                // Check instance parameters first
+                foreach (Parameter param in element.Parameters)
+                {
+                    if (param?.Definition?.Name == null || !param.HasValue) continue;
+
+                    string paramName = param.Definition.Name.ToUpper();
+                    if (!paramName.Contains("CURRENT") && !paramName.Contains("DRAW")) continue;
+
+                    double value = ExtractCurrentValue(param);
+                    if (value > 0)
+                    {
+                        if (paramName.Contains("ALARM"))
+                            currentData.Alarm = value;
+                        else if (paramName.Contains("STANDBY"))
+                            currentData.Standby = value;
+                        else
+                            currentData.Alarm = value; // Default to alarm current
+
+                        currentData.Found = true;
+                        currentData.Source = "Instance";
+                    }
+                }
+
+                // Check type parameters if not found in instance
+                if (!currentData.Found)
+                {
+                    var typeId = element.GetTypeId();
+                    if (typeId != ElementId.InvalidElementId)
+                    {
+                        var elemType = doc.GetElement(typeId);
+                        if (elemType != null)
+                        {
+                            foreach (Parameter param in elemType.Parameters)
+                            {
+                                if (param?.Definition?.Name?.ToUpper().Contains("CURRENT") == true && param.HasValue)
+                                {
+                                    double value = ExtractCurrentValue(param);
+                                    if (value > 0)
+                                    {
+                                        currentData.Alarm = value;
+                                        currentData.Found = true;
+                                        currentData.Source = "Type";
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Ensure standby matches alarm if not explicitly set
+                if (currentData.Standby == 0.030 && currentData.Alarm != 0.030)
+                {
+                    currentData.Standby = currentData.Alarm;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"GetCurrentDraw failed: {ex.Message}");
+            }
+
+            return currentData;
+        }
+
+        private double ExtractCurrentValue(Parameter param)
+        {
+            try
+            {
+                if (param.StorageType == StorageType.Double)
+                {
+                    return param.AsDouble();
+                }
+                else if (param.StorageType == StorageType.String)
+                {
+                    string str = param.AsString()?.ToUpper();
+                    if (!string.IsNullOrEmpty(str))
+                    {
+                        // Use regex to extract numeric value
+                        var match = System.Text.RegularExpressions.Regex.Match(str, @"[\d.]+");
+                        if (match.Success && double.TryParse(match.Value, out double value))
+                        {
+                            // Convert milliamps to amps
+                            if (str.Contains("MA") || str.Contains("MILLIAMP"))
+                                value /= 1000.0;
+                            return value;
+                        }
+                    }
+                }
+                else if (param.StorageType == StorageType.Integer)
+                {
+                    int intValue = param.AsInteger();
+                    return intValue > 0 ? (double)intValue : 0.0;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ExtractCurrentValue failed: {ex.Message}");
+            }
+            return 0.0;
+        }
+
+        public string GetName() => "Fire Alarm Device Selection";
     }
 }
