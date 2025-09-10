@@ -116,12 +116,14 @@ namespace FireAlarmCircuitAnalysis
                 // Remove device if already selected (toggle behavior)
                 if (deviceExists && !shiftPressed)
                 {
+                    string deviceLocation;
                     using (Transaction trans = new Transaction(doc, "Remove Device"))
                     {
                         trans.Start();
 
                         // Remove from circuit
                         var (location, position) = circuitManager.RemoveDevice(elementId);
+                        deviceLocation = location;
 
                         // Restore original graphics
                         if (circuitManager.OriginalOverrides.ContainsKey(elementId))
@@ -135,7 +137,7 @@ namespace FireAlarmCircuitAnalysis
                     }
 
                     Window.Dispatcher.Invoke(() => {
-                        Window.lblStatusMessage.Text = $"Removed '{element.Name}' from {location}.";
+                        Window.lblStatusMessage.Text = $"Removed '{element.Name}' from {deviceLocation}.";
                         Window.UpdateDisplay();
                     });
                     return;
@@ -199,7 +201,8 @@ namespace FireAlarmCircuitAnalysis
                     // Update UI
                     Window.Dispatcher.Invoke(() => {
                         string mode = circuitManager.Mode == "main" ? "main circuit" :
-                            circuitManager.BranchNames.GetValueOrDefault(circuitManager.ActiveTapPoint, "T-tap branch");
+                            (circuitManager.BranchNames.ContainsKey(circuitManager.ActiveTapPoint) ? 
+                             circuitManager.BranchNames[circuitManager.ActiveTapPoint] : "T-tap branch");
                         Window.lblStatusMessage.Text = $"Added '{deviceData.Name}' to {mode}. Current: {currentData.Alarm:F3}A";
                         Window.UpdateDisplay();
                     });

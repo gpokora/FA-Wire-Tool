@@ -220,7 +220,7 @@ namespace FireAlarmCircuitAnalysis.Views
 
                 double safetyPercent = reservedPercent / 100.0;
                 double usableLoad = maxLoad * (1 - safetyPercent);
-                double resistance = WIRE_RESISTANCE.GetValueOrDefault(gauge, 4.016);
+                double resistance = WIRE_RESISTANCE.ContainsKey(gauge) ? WIRE_RESISTANCE[gauge] : 4.016;
 
                 return new CircuitParameters
                 {
@@ -364,8 +364,10 @@ namespace FireAlarmCircuitAnalysis.Views
             }
             else // branch mode
             {
-                var branchName = circuitManager.BranchNames.GetValueOrDefault(circuitManager.ActiveTapPoint, "T-Tap");
-                var branchDevices = circuitManager.Branches.GetValueOrDefault(circuitManager.ActiveTapPoint, new List<ElementId>());
+                var branchName = circuitManager.BranchNames.ContainsKey(circuitManager.ActiveTapPoint) ?
+                    circuitManager.BranchNames[circuitManager.ActiveTapPoint] : "T-Tap";
+                var branchDevices = circuitManager.Branches.ContainsKey(circuitManager.ActiveTapPoint) ?
+                    circuitManager.Branches[circuitManager.ActiveTapPoint] : new List<ElementId>();
                 return $"{branchName} ({branchDevices.Count} devices) - ESC to return to main circuit";
             }
         }
@@ -691,7 +693,7 @@ namespace FireAlarmCircuitAnalysis.Views
             ElementId selectedDeviceId = null;
             string deviceName = "";
 
-            if (svTreeView.Visibility == Visibility.Visible)
+            if (svTreeView.Visibility == System.Windows.Visibility.Visible)
             {
                 // Tree view mode
                 var selectedTreeItem = tvCircuit.SelectedItem as TreeViewItem;
@@ -701,7 +703,7 @@ namespace FireAlarmCircuitAnalysis.Views
                     deviceName = node.Name;
                 }
             }
-            else if (dgDevices.Visibility == Visibility.Visible)
+            else if (dgDevices.Visibility == System.Windows.Visibility.Visible)
             {
                 // Grid view mode
                 if (dgDevices.SelectedItem is DeviceListItem selectedItem)

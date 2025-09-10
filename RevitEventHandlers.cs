@@ -316,4 +316,206 @@ namespace FireAlarmCircuitAnalysis
             return "Create Fire Alarm Circuit Wires";
         }
     }
+
+    /// <summary>
+    /// Event handler for removing devices from circuit
+    /// </summary>
+    public class RemoveDeviceEventHandler : IExternalEventHandler
+    {
+        public Views.FireAlarmCircuitWindow Window { get; set; }
+        public ElementId DeviceId { get; set; }
+        public string DeviceName { get; set; }
+        public bool IsExecuting { get; set; }
+        public string ErrorMessage { get; private set; }
+
+        public void Execute(UIApplication app)
+        {
+            try
+            {
+                IsExecuting = true;
+                ErrorMessage = null;
+
+                if (app?.ActiveUIDocument == null)
+                {
+                    ErrorMessage = "No active Revit document available.";
+                    return;
+                }
+
+                if (Window?.circuitManager == null || DeviceId == null)
+                {
+                    ErrorMessage = "Invalid device or circuit manager.";
+                    return;
+                }
+
+                var doc = app.ActiveUIDocument.Document;
+                var activeView = app.ActiveUIDocument.ActiveView;
+
+                if (doc == null || doc.IsReadOnly)
+                {
+                    ErrorMessage = "Document is not available or read-only.";
+                    return;
+                }
+
+                using (Transaction trans = new Transaction(doc, "Remove Device from Circuit"))
+                {
+                    trans.Start();
+
+                    try
+                    {
+                        // Remove from circuit manager
+                        var (location, position) = Window.circuitManager.RemoveDevice(DeviceId);
+
+                        // Restore original graphics if exists
+                        if (Window.circuitManager.OriginalOverrides.ContainsKey(DeviceId))
+                        {
+                            var originalOverride = Window.circuitManager.OriginalOverrides[DeviceId];
+                            activeView.SetElementOverrides(DeviceId, originalOverride ?? new OverrideGraphicSettings());
+                            Window.circuitManager.OriginalOverrides.Remove(DeviceId);
+                        }
+                        else
+                        {
+                            // Clear any overrides
+                            activeView.SetElementOverrides(DeviceId, new OverrideGraphicSettings());
+                        }
+
+                        // Update tree voltages
+                        if (Window.circuitManager.RootNode != null)
+                        {
+                            Window.circuitManager.RootNode.UpdateVoltages(
+                                Window.circuitManager.Parameters.SystemVoltage,
+                                Window.circuitManager.Parameters.Resistance);
+                        }
+
+                        doc.Regenerate();
+                        trans.Commit();
+
+                        // Update success message
+                        if (!string.IsNullOrEmpty(location))
+                        {
+                            ErrorMessage = null; // Success
+                        }
+                        else
+                        {
+                            ErrorMessage = "Device not found in circuit.";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        trans.RollBack();
+                        ErrorMessage = $"Failed to remove device: {ex.Message}";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ErrorMessage = $"Critical error: {ex.Message}";
+            }
+            finally
+            {
+                IsExecuting = false;
+                Window?.OnDeviceRemovalComplete(DeviceName, ErrorMessage);
+            }
+        }
+
+        public string GetName()
+        {
+            return "Remove Device from Fire Alarm Circuit";
+        }
+    }
+
+    /// <summary>
+    /// Event handler for clearing all circuit data
+    /// </summary>
+    public class ClearCircuitEventHandler : IExternalEventHandler
+    {
+        public Views.FireAlarmCircuitWindow Window { get; set; }
+        public bool IsExecuting { get; set; }
+        public string ErrorMessage { get; private set; }
+
+        public void Execute(UIApplication app)
+        {
+            try
+            {
+                IsExecuting = true;
+                ErrorMessage = null;
+
+                if (app?.ActiveUIDocument == null)
+                {
+                    ErrorMessage = "No active Revit document available.";
+                    return;
+                }
+
+                if (Window?.circuitManager == null)
+                {
+                    ErrorMessage = null; // Nothing to clear
+                    return;
+                }
+
+                var doc = app.ActiveUIDocument.Document;
+                var activeView = app.ActiveUIDocument.ActiveView;
+
+                if (doc == null || doc.IsReadOnly)
+                {
+                    ErrorMessage = "Document is not available or read-only.";
+                    return;
+                }
+
+                using (Transaction trans = new Transaction(doc, "Clear Fire Alarm Circuit"))
+                {
+                    trans.Start();
+
+                    try
+                    {
+                        // Restore all original overrides before clearing
+                        if (activeView != null && Window.circuitManager.OriginalOverrides != null)
+                        {
+                            foreach (var kvp in Window.circuitManager.OriginalOverrides)
+                            {
+                                try
+                                {
+                                    if (kvp.Key != ElementId.InvalidElementId)
+                                    {
+                                        var originalOverride = kvp.Value ?? new OverrideGraphicSettings();
+                                        activeView.SetElementOverrides(kvp.Key, originalOverride);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    // Skip individual override failures but continue
+                                    System.Diagnostics.Debug.WriteLine($"Failed to restore override for {kvp.Key}: {ex.Message}");
+                                }
+                            }
+                        }
+
+                        // Clear the circuit manager
+                        Window.circuitManager.Clear();
+
+                        doc.Regenerate();
+                        trans.Commit();
+
+                        ErrorMessage = null; // Success
+                    }
+                    catch (Exception ex)
+                    {
+                        trans.RollBack();
+                        ErrorMessage = $"Failed to clear circuit: {ex.Message}";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ErrorMessage = $"Critical error: {ex.Message}";
+            }
+            finally
+            {
+                IsExecuting = false;
+                Window?.OnCircuitClearComplete(ErrorMessage);
+            }
+        }
+
+        public string GetName()
+        {
+            return "Clear Fire Alarm Circuit";
+        }
+    }
 }
