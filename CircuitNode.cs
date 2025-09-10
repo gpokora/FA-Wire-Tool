@@ -459,6 +459,7 @@ namespace FireAlarmCircuitAnalysis
     public class CircuitConfiguration
     {
         public string ConfigurationId { get; set; }
+        public string Id => ConfigurationId; // Alias for easier access
         public string Name { get; set; }
         public string Description { get; set; }
         public DateTime CreatedDate { get; set; }

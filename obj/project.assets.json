@@ -11,11 +11,11 @@
           "lib/BouncyCastle.Crypto.dll": {}
         }
       },
-      "EPPlus/6.2.10": {
+      "EPPlus/6.0.3": {
         "type": "package",
         "dependencies": {
-          "EPPlus.Interfaces": "6.1.1",
-          "EPPlus.System.Drawing": "6.1.1",
+          "EPPlus.Interfaces": "6.0.0",
+          "EPPlus.System.Drawing": "6.0.0",
           "Microsoft.IO.RecyclableMemoryStream": "1.4.1"
         },
         "frameworkAssemblies": [
@@ -29,35 +29,35 @@
           "System.configuration"
         ],
         "compile": {
-          "lib/net462/EPPlus.dll": {
+          "lib/net452/EPPlus.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net462/EPPlus.dll": {
+          "lib/net452/EPPlus.dll": {
             "related": ".xml"
           }
         }
       },
-      "EPPlus.Interfaces/6.1.1": {
+      "EPPlus.Interfaces/6.0.0": {
         "type": "package",
         "compile": {
-          "lib/net462/EPPlus.Interfaces.dll": {}
+          "lib/net452/EPPlus.Interfaces.dll": {}
         },
         "runtime": {
-          "lib/net462/EPPlus.Interfaces.dll": {}
+          "lib/net452/EPPlus.Interfaces.dll": {}
         }
       },
-      "EPPlus.System.Drawing/6.1.1": {
+      "EPPlus.System.Drawing/6.0.0": {
         "type": "package",
         "dependencies": {
-          "EPPlus.Interfaces": "6.1.1"
+          "EPPlus.Interfaces": "6.0.0"
         },
         "compile": {
-          "lib/net462/EPPlus.System.Drawing.dll": {}
+          "lib/net452/EPPlus.System.Drawing.dll": {}
         },
         "runtime": {
-          "lib/net462/EPPlus.System.Drawing.dll": {}
+          "lib/net452/EPPlus.System.Drawing.dll": {}
         }
       },
       "iTextSharp/5.5.13.3": {
@@ -134,67 +134,66 @@
         "lib/BouncyCastle.Crypto.dll"
       ]
     },
-    "EPPlus/6.2.10": {
-      "sha512": "U/kj9mKoUMOMUvNIMwbD7xy4R/UTyc9baMVxDWQhYaeIueCviC12feQ3qbcUJZc8yyodC8gAj0BhzBg/wFIjTg==",
+    "EPPlus/6.0.3": {
+      "sha512": "FepVNAluA58cFZ7grhULpPFMA7lYWx3CZtyj1ZbwyzN2rkecpLJfueDVmDgXpwCC/0BNKj/4rdpPAafFMK1kpQ==",
       "type": "package",
-      "path": "epplus/6.2.10",
+      "path": "epplus/6.0.3",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "EPPlusLogo.png",
-        "epplus.6.2.10.nupkg.sha512",
+        "epplus.6.0.3.nupkg.sha512",
         "epplus.nuspec",
         "lib/net35/EPPlus.dll",
         "lib/net35/EPPlus.xml",
-        "lib/net462/EPPlus.dll",
-        "lib/net462/EPPlus.xml",
+        "lib/net452/EPPlus.dll",
+        "lib/net452/EPPlus.xml",
+        "lib/net5.0/EPPlus.dll",
+        "lib/net5.0/EPPlus.xml",
         "lib/net6.0/EPPlus.dll",
         "lib/net6.0/EPPlus.xml",
-        "lib/net7.0/EPPlus.dll",
-        "lib/net7.0/EPPlus.xml",
         "lib/netstandard2.0/EPPlus.dll",
         "lib/netstandard2.0/EPPlus.xml",
         "lib/netstandard2.1/EPPlus.dll",
         "lib/netstandard2.1/EPPlus.xml",
         "license.md",
-        "readme.md",
         "readme.txt"
       ]
     },
-    "EPPlus.Interfaces/6.1.1": {
-      "sha512": "y7dkrOoE1ZR9Vgy1Jf2rEIaTf3SHlUjYt01NklP+F5Qh7S2ruPbzTcpYLRWMeXiG8XL8h2jqX4CyIkFt3NQGZw==",
+    "EPPlus.Interfaces/6.0.0": {
+      "sha512": "xCvJjw2dwhWnM20JiSRfgZbZzOLtpoSAQLWF6FD/VoT7CHR879yP7GxhSShsdTfmGeXVsWatbDZCVLbBVQCNeQ==",
       "type": "package",
-      "path": "epplus.interfaces/6.1.1",
+      "path": "epplus.interfaces/6.0.0",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "EPPlusLogo.png",
-        "epplus.interfaces.6.1.1.nupkg.sha512",
+        "epplus.interfaces.6.0.0.nupkg.sha512",
         "epplus.interfaces.nuspec",
         "lib/net35/EPPlus.Interfaces.dll",
-        "lib/net462/EPPlus.Interfaces.dll",
+        "lib/net452/EPPlus.Interfaces.dll",
+        "lib/net5.0/EPPlus.Interfaces.dll",
         "lib/net6.0/EPPlus.Interfaces.dll",
-        "lib/net7.0/EPPlus.Interfaces.dll",
         "lib/netstandard2.0/EPPlus.Interfaces.dll",
         "lib/netstandard2.1/EPPlus.Interfaces.dll",
         "license.md",
         "readme.md"
       ]
     },
-    "EPPlus.System.Drawing/6.1.1": {
-      "sha512": "lRF5gHYrmkHOOiLMI0t6q8zNYjUrzRgAM5BCXumv5xiqXko8fx3AWI+HCNZfhEqVFGOop+42KfR5GiUcCoyoMw==",
+    "EPPlus.System.Drawing/6.0.0": {
+      "sha512": "RbKLgqQ0O/X3QJS/sx7B3KiOhEnwIM3b8+lUoJ6suYWrrI8N8vLcqGozeiW21us5qzmzaWNw9bVw/vlIfAa/lw==",
       "type": "package",
-      "path": "epplus.system.drawing/6.1.1",
+      "path": "epplus.system.drawing/6.0.0",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "EPPlusLogo.png",
-        "epplus.system.drawing.6.1.1.nupkg.sha512",
+        "epplus.system.drawing.6.0.0.nupkg.sha512",
         "epplus.system.drawing.nuspec",
         "lib/net35/EPPlus.System.Drawing.dll",
-        "lib/net462/EPPlus.System.Drawing.dll",
+        "lib/net452/EPPlus.System.Drawing.dll",
+        "lib/net5.0/EPPlus.System.Drawing.dll",
         "lib/net6.0/EPPlus.System.Drawing.dll",
-        "lib/net7.0/EPPlus.System.Drawing.dll",
         "lib/netstandard2.0/EPPlus.System.Drawing.dll",
         "lib/netstandard2.1/EPPlus.System.Drawing.dll",
         "license.md",
@@ -299,44 +298,45 @@
   },
   "projectFileDependencyGroups": {
     ".NETFramework,Version=v4.8": [
-      "EPPlus >= 6.2.10",
+      "EPPlus >= 5.8.15",
       "NLog >= 5.2.5",
       "Newtonsoft.Json >= 13.0.3",
       "iTextSharp >= 5.5.13.3"
     ]
   },
   "packageFolders": {
-    "C:\\Users\\grego\\.nuget\\packages\\": {},
+    "C:\\Users\\gpokora\\.nuget\\packages\\": {},
     "C:\\Program Files\\DevExpress 24.2\\Components\\Offline Packages": {},
-    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {},
+    "C:\\Program Files (x86)\\Progress\\ToolboxNuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\grego\\source\\repos\\WpfApp1\\WpfApp1\\FireAlarmCircuitAnalysis.csproj",
+      "projectUniqueName": "C:\\Users\\gpokora\\source\\repos\\FA-Wire-Tool\\FireAlarmCircuitAnalysis.csproj",
       "projectName": "FireAlarmCircuitAnalysis",
-      "projectPath": "C:\\Users\\grego\\source\\repos\\WpfApp1\\WpfApp1\\FireAlarmCircuitAnalysis.csproj",
-      "packagesPath": "C:\\Users\\grego\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\grego\\source\\repos\\WpfApp1\\WpfApp1\\obj\\",
+      "projectPath": "C:\\Users\\gpokora\\source\\repos\\FA-Wire-Tool\\FireAlarmCircuitAnalysis.csproj",
+      "packagesPath": "C:\\Users\\gpokora\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\gpokora\\source\\repos\\FA-Wire-Tool\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files\\DevExpress 24.2\\Components\\Offline Packages",
-        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+        "C:\\Program Files (x86)\\Progress\\ToolboxNuGetPackages"
       ],
       "configFilePaths": [
-        "C:\\Users\\grego\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\gpokora\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\DevExpress 24.2.config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Telerik UI for WPF.config"
       ],
       "originalTargetFrameworks": [
         "net48"
       ],
       "sources": {
-        "C:\\Program Files (x86)\\DevExpress 21.2\\Components\\System\\Components\\Packages": {},
         "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
         "C:\\Program Files\\DevExpress 24.2\\Components\\System\\Components\\Packages": {},
-        "C:\\Program Files\\dotnet\\library-packs": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
@@ -363,7 +363,7 @@
         "dependencies": {
           "EPPlus": {
             "target": "Package",
-            "version": "[6.2.10, )"
+            "version": "[5.8.15, )"
           },
           "NLog": {
             "target": "Package",
@@ -381,5 +381,17 @@
         "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304\\RuntimeIdentifierGraph.json"
       }
     }
-  }
+  },
+  "logs": [
+    {
+      "code": "NU1603",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "FireAlarmCircuitAnalysis depends on EPPlus (>= 5.8.15) but EPPlus 5.8.15 was not found. EPPlus 6.0.3 was resolved instead.",
+      "libraryId": "EPPlus",
+      "targetGraphs": [
+        ".NETFramework,Version=v4.8"
+      ]
+    }
+  ]
 }

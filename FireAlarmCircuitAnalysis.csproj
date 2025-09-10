@@ -72,7 +72,7 @@
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="EPPlus" Version="6.2.10" />
+    <PackageReference Include="EPPlus" Version="5.8.15" />
     <PackageReference Include="iTextSharp" Version="5.5.13.3" />
     <PackageReference Include="NLog" Version="5.2.5" />
   </ItemGroup>
@@ -85,7 +85,6 @@
     <None Include="FireAlarmCircuitAnalysis.addin">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="packages.config" />
     <None Include="README.md" />
   </ItemGroup>
 
@@ -102,6 +101,14 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Views\SettingsWindow.xaml" />
+    <Page Include="Views\SaveCircuitDialogWindow.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\LoadCircuitDialogWindow.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="Resources\Styles.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>

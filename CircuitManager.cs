@@ -300,20 +300,79 @@ namespace FireAlarmCircuitAnalysis
                 position = MainCircuit.IndexOf(deviceId) + 1;
                 location = "main";
 
-                // Remove any branches from this device first
+                // CRITICAL FIX: Reassign T-tap branches instead of deleting them
                 if (Branches.ContainsKey(deviceId))
                 {
-                    // Remove branch devices from tree
-                    foreach (var branchDev in Branches[deviceId].ToList())
+                    // Find the previous device in main circuit to reassign T-tap
+                    int deviceIndex = MainCircuit.IndexOf(deviceId);
+                    if (deviceIndex > 0)
                     {
-                        RemoveNodeFromTree(branchDev);
-                        if (DeviceData.ContainsKey(branchDev))
-                            DeviceData.Remove(branchDev);
+                        var previousDeviceId = MainCircuit[deviceIndex - 1];
+                        
+                        // Move the T-tap branch to the previous device
+                        var branchDevices = Branches[deviceId];
+                        var branchName = BranchNames.ContainsKey(deviceId) ? BranchNames[deviceId] : null;
+                        
+                        // Remove old T-tap
+                        Branches.Remove(deviceId);
+                        if (BranchNames.ContainsKey(deviceId))
+                            BranchNames.Remove(deviceId);
+                        
+                        // Create new T-tap on previous device (if it doesn't already have one)
+                        if (!Branches.ContainsKey(previousDeviceId))
+                        {
+                            Branches[previousDeviceId] = branchDevices;
+                            if (branchName != null)
+                                BranchNames[previousDeviceId] = branchName;
+                                
+                            System.Diagnostics.Debug.WriteLine($"REMOVE DEVICE - Reassigned T-tap branch with {branchDevices.Count} devices from {DeviceData[deviceId].Name} to {DeviceData[previousDeviceId].Name}");
+                        }
+                        else
+                        {
+                            // Previous device already has a T-tap, merge the branches
+                            Branches[previousDeviceId].AddRange(branchDevices);
+                            System.Diagnostics.Debug.WriteLine($"REMOVE DEVICE - Merged T-tap branch with {branchDevices.Count} devices into existing branch on {DeviceData[previousDeviceId].Name}");
+                        }
                     }
-                    Branches.Remove(deviceId);
-
-                    if (BranchNames.ContainsKey(deviceId))
-                        BranchNames.Remove(deviceId);
+                    else
+                    {
+                        // First device in main circuit with T-tap
+                        // Reassign to the next device if it exists
+                        if (MainCircuit.Count > 1)
+                        {
+                            var nextDeviceId = MainCircuit[1];
+                            var branchDevices = Branches[deviceId];
+                            var branchName = BranchNames.ContainsKey(deviceId) ? BranchNames[deviceId] : null;
+                            
+                            // Remove old T-tap
+                            Branches.Remove(deviceId);
+                            if (BranchNames.ContainsKey(deviceId))
+                                BranchNames.Remove(deviceId);
+                            
+                            // Create new T-tap on next device
+                            if (!Branches.ContainsKey(nextDeviceId))
+                            {
+                                Branches[nextDeviceId] = branchDevices;
+                                if (branchName != null)
+                                    BranchNames[nextDeviceId] = branchName;
+                                    
+                                System.Diagnostics.Debug.WriteLine($"REMOVE DEVICE - Reassigned T-tap branch from first device to {DeviceData[nextDeviceId].Name}");
+                            }
+                            else
+                            {
+                                Branches[nextDeviceId].AddRange(branchDevices);
+                                System.Diagnostics.Debug.WriteLine($"REMOVE DEVICE - Merged T-tap branch into existing branch on {DeviceData[nextDeviceId].Name}");
+                            }
+                        }
+                        else
+                        {
+                            // Only device in main circuit - branches will be orphaned (remove them)
+                            Branches.Remove(deviceId);
+                            if (BranchNames.ContainsKey(deviceId))
+                                BranchNames.Remove(deviceId);
+                            System.Diagnostics.Debug.WriteLine($"REMOVE DEVICE - Warning: Removed T-tap from only device in main circuit");
+                        }
+                    }
                 }
 
                 // Remove from main circuit data
@@ -350,8 +409,27 @@ namespace FireAlarmCircuitAnalysis
             // Remove from tree structure regardless of location
             if (location != null)
             {
-                RemoveNodeFromTree(deviceId);
+                // For complex removals involving T-tap reassignments, rebuild the entire tree structure
+                // to ensure consistency between branch lists and tree structure
+                if (Branches.Count > 0)
+                {
+                    RebuildTreeStructure();
+                }
+                else
+                {
+                    // Simple removal without T-taps - use the optimized removal
+                    RemoveNodeFromTree(deviceId);
+                }
+                
                 UpdateStatistics();
+                
+                // Recalculate voltages for the entire tree since distances and connections changed
+                if (RootNode != null)
+                {
+                    RootNode.UpdateVoltages(Parameters.SystemVoltage, Parameters.Resistance);
+                    RootNode.UpdateAccumulatedLoad();
+                    System.Diagnostics.Debug.WriteLine($"REMOVE DEVICE - Recalculated voltages after removal");
+                }
                 
                 System.Diagnostics.Debug.WriteLine($"REMOVE DEVICE - Device removed from {location} at position {position}");
                 return (location, position);
@@ -361,7 +439,7 @@ namespace FireAlarmCircuitAnalysis
         }
 
         /// <summary>
-        /// Remove a node from the tree structure
+        /// Remove a node from the tree structure while preserving children
         /// </summary>
         private void RemoveNodeFromTree(ElementId deviceId)
         {
@@ -373,8 +451,28 @@ namespace FireAlarmCircuitAnalysis
                 var parent = nodeToRemove.Parent;
                 if (parent != null)
                 {
+                    // CRITICAL: Reassign children to maintain circuit continuity
+                    var childrenToReassign = new List<CircuitNode>(nodeToRemove.Children);
+                    
+                    System.Diagnostics.Debug.WriteLine($"TREE REMOVE - Removing '{nodeToRemove.Name}' with {childrenToReassign.Count} children");
+                    
+                    // Remove the node from parent first
                     parent.RemoveChild(nodeToRemove);
-                    System.Diagnostics.Debug.WriteLine($"TREE REMOVE - Removed node '{nodeToRemove.Name}' from parent '{parent.Name}'");
+                    
+                    // Reassign all children to the parent (previous device in chain)
+                    foreach (var child in childrenToReassign)
+                    {
+                        // Update distances - child's distance becomes original distance + removed node's distance
+                        double additionalDistance = nodeToRemove.DistanceFromParent;
+                        child.DistanceFromParent += additionalDistance;
+                        
+                        // Add child to the parent (bypassing the removed node)
+                        parent.AddChild(child);
+                        
+                        System.Diagnostics.Debug.WriteLine($"TREE REMOVE - Reassigned '{child.Name}' to '{parent.Name}' with updated distance {child.DistanceFromParent:F1}ft");
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"TREE REMOVE - Removed node '{nodeToRemove.Name}' from parent '{parent.Name}' and reassigned {childrenToReassign.Count} children");
                 }
                 else if (nodeToRemove == RootNode)
                 {
@@ -382,6 +480,102 @@ namespace FireAlarmCircuitAnalysis
                     System.Diagnostics.Debug.WriteLine($"TREE REMOVE - Warning: Attempted to remove root node");
                 }
             }
+        }
+
+        /// <summary>
+        /// Rebuild the tree structure to match the current branch assignments after removal operations
+        /// </summary>
+        private void RebuildTreeStructure()
+        {
+            if (RootNode == null) return;
+
+            System.Diagnostics.Debug.WriteLine($"REBUILD TREE - Rebuilding tree structure to match current branch assignments");
+            
+            // Clear all children from devices (keep only the root)
+            var allNodes = RootNode.GetAllNodes().Where(n => n.NodeType == "Device").ToList();
+            foreach (var node in allNodes)
+            {
+                node.Children.Clear();
+            }
+            
+            // Rebuild main circuit chain
+            for (int i = 0; i < MainCircuit.Count; i++)
+            {
+                var deviceId = MainCircuit[i];
+                var deviceNode = RootNode.FindNode(deviceId);
+                
+                if (deviceNode != null)
+                {
+                    if (i == 0)
+                    {
+                        // First device connects to root
+                        RootNode.AddChild(deviceNode);
+                        deviceNode.DistanceFromParent = Parameters.SupplyDistance;
+                    }
+                    else
+                    {
+                        // Subsequent devices connect to previous device
+                        var previousDeviceId = MainCircuit[i - 1];
+                        var previousNode = RootNode.FindNode(previousDeviceId);
+                        if (previousNode != null)
+                        {
+                            previousNode.AddChild(deviceNode);
+                            deviceNode.DistanceFromParent = CalculateDistance(previousDeviceId, deviceId);
+                        }
+                    }
+                }
+            }
+            
+            // Rebuild branches
+            foreach (var kvp in Branches)
+            {
+                var tapDeviceId = kvp.Key;
+                var branchDevices = kvp.Value;
+                var tapNode = RootNode.FindNode(tapDeviceId);
+                
+                if (tapNode != null && branchDevices.Count > 0)
+                {
+                    for (int i = 0; i < branchDevices.Count; i++)
+                    {
+                        var branchDeviceId = branchDevices[i];
+                        var branchNode = RootNode.FindNode(branchDeviceId);
+                        
+                        if (branchNode != null)
+                        {
+                            if (i == 0)
+                            {
+                                // First branch device connects to tap device
+                                tapNode.AddChild(branchNode);
+                                branchNode.DistanceFromParent = CalculateDistance(tapDeviceId, branchDeviceId);
+                            }
+                            else
+                            {
+                                // Subsequent branch devices connect to previous branch device
+                                var previousBranchId = branchDevices[i - 1];
+                                var previousBranchNode = RootNode.FindNode(previousBranchId);
+                                if (previousBranchNode != null)
+                                {
+                                    previousBranchNode.AddChild(branchNode);
+                                    branchNode.DistanceFromParent = CalculateDistance(previousBranchId, branchDeviceId);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            System.Diagnostics.Debug.WriteLine($"REBUILD TREE - Tree structure rebuilt successfully");
+        }
+
+        private double CalculateDistance(ElementId fromId, ElementId toId)
+        {
+            if (!DeviceData.ContainsKey(fromId) || !DeviceData.ContainsKey(toId))
+                return 25.0; // Default distance
+            
+            var fromData = DeviceData[fromId];
+            var toData = DeviceData[toId];
+            
+            return GetSegmentLength(fromData.Connector, toData.Connector);
         }
 
         public double GetTotalSystemLoad()

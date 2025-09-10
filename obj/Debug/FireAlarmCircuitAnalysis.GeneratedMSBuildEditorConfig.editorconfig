@@ -1,6 +1,6 @@
 is_global = true
 build_property.RootNamespace = FireAlarmCircuitAnalysis
-build_property.ProjectDir = C:\Users\grego\source\repos\WpfApp1\WpfApp1\
+build_property.ProjectDir = C:\Users\gpokora\source\repos\FA-Wire-Tool\
 build_property.EnableComHosting = 
 build_property.EnableGeneratedComInterfaceComImportInterop = 
 build_property.CsWinRTUseWindowsUIXamlProjections = false

@@ -76,6 +76,45 @@ namespace FireAlarmCircuitAnalysis
 
                 // Selection ended
                 IsSelecting = false;
+                
+                // Clear visual overrides before ending selection
+                if (Window?.circuitManager?.OriginalOverrides?.Count > 0)
+                {
+                    try
+                    {
+                        var document = app.ActiveUIDocument.Document;
+                        var activeView = app.ActiveUIDocument.ActiveView;
+                        
+                        using (Transaction trans = new Transaction(document, "Clear Selection Overrides"))
+                        {
+                            trans.Start();
+                            
+                            foreach (var kvp in Window.circuitManager.OriginalOverrides)
+                            {
+                                try
+                                {
+                                    if (kvp.Key != ElementId.InvalidElementId)
+                                    {
+                                        activeView.SetElementOverrides(kvp.Key, kvp.Value ?? new OverrideGraphicSettings());
+                                    }
+                                }
+                                catch
+                                {
+                                    // Skip individual failures
+                                }
+                            }
+                            
+                            Window.circuitManager.OriginalOverrides.Clear();
+                            trans.Commit();
+                        }
+                    }
+                    catch
+                    {
+                        // Fall back to external event if transaction fails
+                        Window?.clearOverridesEvent?.Raise();
+                    }
+                }
+                
                 Window?.Dispatcher.Invoke(() => Window.EndSelection());
             }
             catch (Exception ex)

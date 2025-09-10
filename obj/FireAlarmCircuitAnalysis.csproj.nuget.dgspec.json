@@ -1,36 +1,36 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\grego\\source\\repos\\WpfApp1\\WpfApp1\\FireAlarmCircuitAnalysis.csproj": {}
+    "C:\\Users\\gpokora\\source\\repos\\FA-Wire-Tool\\FireAlarmCircuitAnalysis.csproj": {}
   },
   "projects": {
-    "C:\\Users\\grego\\source\\repos\\WpfApp1\\WpfApp1\\FireAlarmCircuitAnalysis.csproj": {
+    "C:\\Users\\gpokora\\source\\repos\\FA-Wire-Tool\\FireAlarmCircuitAnalysis.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\grego\\source\\repos\\WpfApp1\\WpfApp1\\FireAlarmCircuitAnalysis.csproj",
+        "projectUniqueName": "C:\\Users\\gpokora\\source\\repos\\FA-Wire-Tool\\FireAlarmCircuitAnalysis.csproj",
         "projectName": "FireAlarmCircuitAnalysis",
-        "projectPath": "C:\\Users\\grego\\source\\repos\\WpfApp1\\WpfApp1\\FireAlarmCircuitAnalysis.csproj",
-        "packagesPath": "C:\\Users\\grego\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\grego\\source\\repos\\WpfApp1\\WpfApp1\\obj\\",
+        "projectPath": "C:\\Users\\gpokora\\source\\repos\\FA-Wire-Tool\\FireAlarmCircuitAnalysis.csproj",
+        "packagesPath": "C:\\Users\\gpokora\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\gpokora\\source\\repos\\FA-Wire-Tool\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files\\DevExpress 24.2\\Components\\Offline Packages",
-          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files (x86)\\Progress\\ToolboxNuGetPackages"
         ],
         "configFilePaths": [
-          "C:\\Users\\grego\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\gpokora\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\DevExpress 24.2.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
-          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Telerik UI for WPF.config"
         ],
         "originalTargetFrameworks": [
           "net48"
         ],
         "sources": {
-          "C:\\Program Files (x86)\\DevExpress 21.2\\Components\\System\\Components\\Packages": {},
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "C:\\Program Files\\DevExpress 24.2\\Components\\System\\Components\\Packages": {},
-          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -57,7 +57,7 @@
           "dependencies": {
             "EPPlus": {
               "target": "Package",
-              "version": "[6.2.10, )"
+              "version": "[5.8.15, )"
             },
             "NLog": {
               "target": "Package",

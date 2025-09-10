@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Electrical;
@@ -19,6 +21,7 @@ namespace FireAlarmCircuitAnalysis.Views
     {
         public CircuitManager circuitManager;
         private DispatcherTimer updateTimer;
+        private SchematicDrawing schematicDrawing;
         public bool isSelecting = false;
         public SelectionEventHandler selectionHandler;
         public ExternalEvent selectionEvent;
@@ -33,7 +36,7 @@ namespace FireAlarmCircuitAnalysis.Views
         private ClearCircuitEventHandler clearCircuitHandler;
         private ExternalEvent clearCircuitEvent;
         private ClearOverridesEventHandler clearOverridesHandler;
-        private ExternalEvent clearOverridesEvent;
+        public ExternalEvent clearOverridesEvent;
         private InitializationEventHandler initializationHandler;
         private ExternalEvent initializationEvent;
 
@@ -117,6 +120,9 @@ namespace FireAlarmCircuitAnalysis.Views
 
             // Handle window closing
             this.Closing += Window_Closing;
+            
+            // Handle window resize for responsive schematic
+            this.SizeChanged += FireAlarmCircuitWindow_SizeChanged;
 
             // Handle selection changes for enabling/disabling remove button
             tvCircuit.SelectedItemChanged += (s, e) =>
@@ -167,6 +173,23 @@ namespace FireAlarmCircuitAnalysis.Views
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             Dispose();
+        }
+
+        private void FireAlarmCircuitWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            // Update schematic view layout when window is resized
+            if (svSchematicView?.Visibility == System.Windows.Visibility.Visible && schematicDrawing != null)
+            {
+                try
+                {
+                    // Refresh schematic drawing to adapt to new window size
+                    UpdateSchematicView();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"FireAlarmCircuitWindow_SizeChanged failed: {ex.Message}");
+                }
+            }
         }
 
         private void OnParameterChanged(object sender, EventArgs e)
@@ -295,11 +318,20 @@ namespace FireAlarmCircuitAnalysis.Views
                 {
                     var parameters = GetParameters();
                     circuitManager = new CircuitManager(parameters);
+                    
+                    // Initialize SchematicDrawing with the new circuit manager
+                    schematicDrawing = new SchematicDrawing(circuitSchematicCanvas, circuitManager);
                 }
                 else
                 {
                     // Update parameters in case user changed them
                     circuitManager.Parameters = GetParameters();
+                    
+                    // Update SchematicDrawing with the updated circuit manager
+                    if (schematicDrawing != null)
+                    {
+                        schematicDrawing = new SchematicDrawing(circuitSchematicCanvas, circuitManager);
+                    }
                 }
 
                 // Update UI for selection mode
@@ -372,11 +404,8 @@ namespace FireAlarmCircuitAnalysis.Views
             // Stop update timer
             updateTimer.Stop();
 
-            // Clear visual overrides when ending selection
-            if (circuitManager != null && circuitManager.OriginalOverrides.Count > 0)
-            {
-                clearOverridesEvent.Raise();
-            }
+            // Note: Visual overrides are cleared in SelectionEventHandler.Execute() 
+            // before calling this method to ensure proper Revit API context
 
             // Final display update
             UpdateDisplay();
@@ -862,7 +891,7 @@ namespace FireAlarmCircuitAnalysis.Views
 
             try
             {
-                var nameDialog = new SaveCircuitDialog();
+                var nameDialog = new SaveCircuitDialog(circuitManager);
                 nameDialog.Owner = this;
 
                 if (nameDialog.ShowDialog() == true)
@@ -901,6 +930,9 @@ namespace FireAlarmCircuitAnalysis.Views
                                     circuitManager = new CircuitManager(parameters);
                                 }
 
+                                // Initialize SchematicDrawing with the circuit manager
+                                schematicDrawing = new SchematicDrawing(circuitSchematicCanvas, circuitManager);
+
                                 circuitManager.LoadConfiguration(configToLoad);
                                 UpdateDisplay();
                                 lblStatusMessage.Text = $"Loaded circuit '{configToLoad.Name}'.";
@@ -918,6 +950,9 @@ namespace FireAlarmCircuitAnalysis.Views
                             var parameters = GetParameters();
                             circuitManager = new CircuitManager(parameters);
                         }
+
+                        // Initialize SchematicDrawing with the circuit manager
+                        schematicDrawing = new SchematicDrawing(circuitSchematicCanvas, circuitManager);
 
                         circuitManager.LoadConfiguration(loadDialog.SelectedConfiguration);
                         UpdateDisplay();
@@ -953,9 +988,144 @@ namespace FireAlarmCircuitAnalysis.Views
             }
         }
 
+        private void BtnDiagnostic_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (circuitManager == null)
+                {
+                    // Create default parameters for diagnostic purposes
+                    var defaultParams = new CircuitParameters
+                    {
+                        SystemVoltage = 24.0,
+                        MinVoltage = 19.2,
+                        MaxLoad = 3.0,
+                        SafetyPercent = 0.20,
+                        WireGauge = "14 AWG",
+                        SupplyDistance = 0.0
+                    };
+                    var tempManager = new CircuitManager(defaultParams);
+                    var tempExporter = new ExportManager(tempManager);
+                    var diagnostic = tempExporter.GetDiagnosticInfo();
+                    TaskDialog.Show("Export Diagnostic", diagnostic);
+                }
+                else
+                {
+                    var exporter = new ExportManager(circuitManager);
+                    var diagnostic = exporter.GetDiagnosticInfo();
+                    TaskDialog.Show("Export Diagnostic", diagnostic);
+                }
+            }
+            catch (Exception ex)
+            {
+                TaskDialog.Show("Diagnostic Error", $"Failed to run diagnostic: {ex.Message}");
+            }
+        }
+
         private void BtnExport_Click(object sender, RoutedEventArgs e)
         {
-            TaskDialog.Show("Export", "Export functionality not yet implemented.");
+            if (circuitManager == null) return;
+
+            try
+            {
+                // Check dependencies first and show diagnostic if there are issues
+                var tempExporter = new ExportManager(circuitManager);
+                string dependencyError;
+                bool hasExcelIssues = !tempExporter.CheckDependencies("EXCEL", out dependencyError);
+                bool hasPDFIssues = !tempExporter.CheckDependencies("PDF", out string pdfError);
+                
+                // Create export format selection dialog
+                var formatDialog = new TaskDialog("Export Circuit Report");
+                formatDialog.MainInstruction = "Select export format:";
+                formatDialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "CSV", "Comma-separated values file");
+                formatDialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "Excel", hasExcelIssues ? "Excel (Issues detected - see diagnostic)" : "Microsoft Excel workbook (.xlsx)");
+                formatDialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink3, "PDF", hasPDFIssues ? "PDF (Issues detected - see diagnostic)" : "Portable Document Format");
+                formatDialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink4, "JSON", "JavaScript Object Notation");
+                
+                if (hasExcelIssues || hasPDFIssues)
+                {
+                    formatDialog.MainContent = "Some export formats have dependency issues. Use CSV or JSON for guaranteed compatibility, or run diagnostic for details.";
+                }
+                
+                formatDialog.CommonButtons = TaskDialogCommonButtons.Cancel;
+                formatDialog.DefaultButton = TaskDialogResult.CommandLink1;
+                
+                var result = formatDialog.Show();
+                string format = null;
+                
+                switch (result)
+                {
+                    case TaskDialogResult.CommandLink1:
+                        format = "CSV";
+                        break;
+                    case TaskDialogResult.CommandLink2:
+                        format = "EXCEL";
+                        // Show diagnostic if there are Excel issues
+                        if (hasExcelIssues)
+                        {
+                            var diagResult = TaskDialog.Show("Excel Export Issues", 
+                                $"Excel export dependency issue detected:\n\n{dependencyError}\n\nDo you want to continue anyway?",
+                                TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No);
+                            if (diagResult == TaskDialogResult.No)
+                                return;
+                        }
+                        break;
+                    case TaskDialogResult.CommandLink3:
+                        format = "PDF";
+                        // Show diagnostic if there are PDF issues
+                        if (hasPDFIssues)
+                        {
+                            var diagResult = TaskDialog.Show("PDF Export Issues", 
+                                $"PDF export dependency issue detected:\n\n{pdfError}\n\nDo you want to continue anyway?",
+                                TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No);
+                            if (diagResult == TaskDialogResult.No)
+                                return;
+                        }
+                        break;
+                    case TaskDialogResult.CommandLink4:
+                        format = "JSON";
+                        break;
+                    default:
+                        return; // Cancelled
+                }
+                
+                lblStatusMessage.Text = $"Exporting to {format}...";
+                
+                var exporter = new ExportManager(circuitManager);
+                string filePath;
+                
+                if (exporter.ExportToFormat(format, out filePath))
+                {
+                    lblStatusMessage.Text = $"Export successful: {System.IO.Path.GetFileName(filePath)}";
+                    
+                    var openDialog = new TaskDialog("Export Complete");
+                    openDialog.MainInstruction = "Circuit report exported successfully";
+                    openDialog.MainContent = $"File saved to:\n{filePath}";
+                    openDialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Open File");
+                    openDialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "Open Folder");
+                    openDialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink3, "Close");
+                    
+                    var openResult = openDialog.Show();
+                    
+                    if (openResult == TaskDialogResult.CommandLink1)
+                    {
+                        System.Diagnostics.Process.Start(filePath);
+                    }
+                    else if (openResult == TaskDialogResult.CommandLink2)
+                    {
+                        System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{filePath}\"");
+                    }
+                }
+                else
+                {
+                    lblStatusMessage.Text = "Export failed.";
+                }
+            }
+            catch (Exception ex)
+            {
+                TaskDialog.Show("Export Error", $"Failed to export circuit report: {ex.Message}");
+                lblStatusMessage.Text = "Export failed.";
+            }
         }
 
         private void BtnRemoveDevice_Click(object sender, RoutedEventArgs e)
@@ -1069,6 +1239,18 @@ namespace FireAlarmCircuitAnalysis.Views
                 
                 // Update the schematic when switching to it
                 UpdateSchematicView();
+                
+                // Fit schematic to available space with a delay to ensure layout is complete
+                if (schematicDrawing != null)
+                {
+                    Dispatcher.BeginInvoke(new System.Action(() => {
+                        var scrollViewer = svSchematicView;
+                        if (scrollViewer.ActualWidth > 0 && scrollViewer.ActualHeight > 0)
+                        {
+                            schematicDrawing.FitToWindow(scrollViewer.ActualWidth - 40, scrollViewer.ActualHeight - 40);
+                        }
+                    }), DispatcherPriority.Loaded);
+                }
             }
         }
 
@@ -1250,9 +1432,14 @@ namespace FireAlarmCircuitAnalysis.Views
                 return;
             }
 
-            circuitSchematicCanvas.Children.Clear();
-            DrawSchematicDiagram();
+            // Use the new SchematicDrawing class for NFPA-compliant schematic
+            schematicDrawing?.DrawSchematic();
         }
+
+        // ========================================
+        // SCHEMATIC CANVAS EVENT HANDLERS
+        // ========================================
+
 
         private void DrawSchematicDiagram()
         {
@@ -1506,6 +1693,31 @@ namespace FireAlarmCircuitAnalysis.Views
         private void SchematicCanvas_MouseLeave(object sender, MouseEventArgs e)
         {
             HideDeviceTooltip();
+        }
+
+        private void SchematicCanvas_MouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (schematicDrawing == null) return;
+
+            // Calculate zoom factor based on wheel delta
+            double zoomFactor = e.Delta > 0 ? 1.1 : 0.9;
+            
+            // Apply zoom to the schematic drawing
+            try
+            {
+                // Get current scale and apply zoom
+                var currentScale = 1.0; // Default scale from SchematicDrawing
+                var newScale = currentScale * zoomFactor;
+                
+                // Use SetScale method from SchematicDrawing
+                schematicDrawing.SetScale(newScale);
+                
+                e.Handled = true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Zoom error: {ex.Message}");
+            }
         }
     }
 

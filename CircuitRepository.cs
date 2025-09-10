@@ -158,6 +158,14 @@ namespace FireAlarmCircuitAnalysis
         }
         
         /// <summary>
+        /// Remove a circuit configuration (alias for DeleteCircuit)
+        /// </summary>
+        public bool RemoveCircuit(string configurationId)
+        {
+            return DeleteCircuit(configurationId);
+        }
+        
+        /// <summary>
         /// Get circuits for current project
         /// </summary>
         public List<CircuitConfiguration> GetProjectCircuits(string projectPath)

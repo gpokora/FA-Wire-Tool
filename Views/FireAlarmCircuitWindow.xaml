@@ -293,7 +293,8 @@
                                    Width="1200" Height="600" Margin="10"
                                    MouseLeftButtonDown="SchematicCanvas_MouseDown"
                                    MouseMove="SchematicCanvas_MouseMove"
-                                   MouseLeave="SchematicCanvas_MouseLeave">
+                                   MouseLeave="SchematicCanvas_MouseLeave"
+                                   MouseWheel="SchematicCanvas_MouseWheel">
                                 <!-- Circuit elements will be drawn here programmatically -->
                             </Canvas>
                         </ScrollViewer>
@@ -314,6 +315,9 @@
                             <Button Content="Export" Margin="2" Padding="8,3"
                                    Click="BtnExport_Click" IsEnabled="False" Name="btnExport"
                                    ToolTip="Export circuit report"/>
+                            <Button Content="Diagnostic" Margin="2" Padding="8,3"
+                                   Click="BtnDiagnostic_Click" Name="btnDiagnostic"
+                                   ToolTip="Show export dependency diagnostic"/>
                             <Button Content="Remove Selected" Margin="2" Padding="8,3"
                                    Click="BtnRemoveDevice_Click" IsEnabled="False" Name="btnRemoveDevice"
                                    ToolTip="Remove selected device"/>
