@@ -112,7 +112,6 @@ namespace FireAlarmCircuitAnalysis
                 },
                 Validation = new ValidationSettings
                 {
-                    EnableNFPA72Compliance = true,
                     MaxVoltageDropPercent = 10,
                     MinEndOfLineVoltage = 16.0,
                     MaxCircuitLength = 3000
@@ -229,7 +228,6 @@ namespace FireAlarmCircuitAnalysis
 
     public class ValidationSettings
     {
-        public bool EnableNFPA72Compliance { get; set; }
         public double MaxVoltageDropPercent { get; set; }
         public double MinEndOfLineVoltage { get; set; }
         public int MaxCircuitLength { get; set; }

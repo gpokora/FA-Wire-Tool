@@ -26,10 +26,14 @@ namespace FireAlarmCircuitAnalysis.Views
         // Additional event handlers for thread-safe Revit API operations
         private CreateWiresEventHandler createWiresHandler;
         private ExternalEvent createWiresEvent;
+        private ManualWireRoutingEventHandler manualWireRoutingHandler;
+        private ExternalEvent manualWireRoutingEvent;
         private RemoveDeviceEventHandler removeDeviceHandler;
         private ExternalEvent removeDeviceEvent;
         private ClearCircuitEventHandler clearCircuitHandler;
         private ExternalEvent clearCircuitEvent;
+        private ClearOverridesEventHandler clearOverridesHandler;
+        private ExternalEvent clearOverridesEvent;
         private InitializationEventHandler initializationHandler;
         private ExternalEvent initializationEvent;
 
@@ -51,8 +55,10 @@ namespace FireAlarmCircuitAnalysis.Views
         public FireAlarmCircuitWindow(
             SelectionEventHandler selectionHandler, ExternalEvent selectionEvent,
             CreateWiresEventHandler createWiresHandler, ExternalEvent createWiresEvent,
+            ManualWireRoutingEventHandler manualWireRoutingHandler, ExternalEvent manualWireRoutingEvent,
             RemoveDeviceEventHandler removeDeviceHandler, ExternalEvent removeDeviceEvent,
             ClearCircuitEventHandler clearCircuitHandler, ExternalEvent clearCircuitEvent,
+            ClearOverridesEventHandler clearOverridesHandler, ExternalEvent clearOverridesEvent,
             InitializationEventHandler initializationHandler, ExternalEvent initializationEvent)
         {
             InitializeComponent();
@@ -62,18 +68,24 @@ namespace FireAlarmCircuitAnalysis.Views
             this.selectionEvent = selectionEvent;
             this.createWiresHandler = createWiresHandler;
             this.createWiresEvent = createWiresEvent;
+            this.manualWireRoutingHandler = manualWireRoutingHandler;
+            this.manualWireRoutingEvent = manualWireRoutingEvent;
             this.removeDeviceHandler = removeDeviceHandler;
             this.removeDeviceEvent = removeDeviceEvent;
             this.clearCircuitHandler = clearCircuitHandler;
             this.clearCircuitEvent = clearCircuitEvent;
+            this.clearOverridesHandler = clearOverridesHandler;
+            this.clearOverridesEvent = clearOverridesEvent;
             this.initializationHandler = initializationHandler;
             this.initializationEvent = initializationEvent;
 
             // Set window references in handlers
             selectionHandler.Window = this;
             createWiresHandler.Window = this;
+            manualWireRoutingHandler.Window = this;
             removeDeviceHandler.Window = this;
             clearCircuitHandler.Window = this;
+            clearOverridesHandler.Window = this;
             initializationHandler.Window = this;
 
             // Trigger initialization in proper Revit API context
@@ -110,11 +122,23 @@ namespace FireAlarmCircuitAnalysis.Views
             tvCircuit.SelectedItemChanged += (s, e) =>
             {
                 btnRemoveDevice.IsEnabled = (tvCircuit.SelectedItem as TreeViewItem)?.Tag is CircuitNode node && node.NodeType == "Device";
+                
+                // Zoom to selected device if checkbox is checked
+                if (chkZoomToSelected.IsChecked == true)
+                {
+                    ZoomToSelectedDevice();
+                }
             };
 
             dgDevices.SelectionChanged += (s, e) =>
             {
                 btnRemoveDevice.IsEnabled = dgDevices.SelectedItem != null;
+                
+                // Zoom to selected device if checkbox is checked
+                if (chkZoomToSelected.IsChecked == true)
+                {
+                    ZoomToSelectedDeviceFromList();
+                }
             };
         }
 
@@ -348,6 +372,12 @@ namespace FireAlarmCircuitAnalysis.Views
             // Stop update timer
             updateTimer.Stop();
 
+            // Clear visual overrides when ending selection
+            if (circuitManager != null && circuitManager.OriginalOverrides.Count > 0)
+            {
+                clearOverridesEvent.Raise();
+            }
+
             // Final display update
             UpdateDisplay();
         }
@@ -438,25 +468,43 @@ namespace FireAlarmCircuitAnalysis.Views
                 treeItem.FontWeight = FontWeights.Bold;
                 treeItem.Foreground = new SolidColorBrush(Colors.DarkBlue);
             }
-            else if (node.NodeType == "Branch")
-            {
-                treeItem.Foreground = new SolidColorBrush(Colors.DarkOrange);
-                treeItem.FontStyle = FontStyles.Italic;
-            }
+            // No longer need Branch node styling since we removed intermediate branch nodes
             else if (node.NodeType == "Device")
             {
-                if (node.Status == "⚠️ LOW")
+                if (node.IsBranchDevice)
                 {
-                    treeItem.Foreground = new SolidColorBrush(Colors.Red);
-                    treeItem.FontWeight = FontWeights.Bold;
-                }
-                else if (node.Status == "⚠️")
-                {
-                    treeItem.Foreground = new SolidColorBrush(Colors.Orange);
+                    // Branch devices - use different styling
+                    if (node.Status == "⚠️ LOW")
+                    {
+                        treeItem.Foreground = new SolidColorBrush(Colors.Red);
+                        treeItem.FontWeight = FontWeights.Bold;
+                    }
+                    else if (node.Status == "⚠️")
+                    {
+                        treeItem.Foreground = new SolidColorBrush(Colors.Orange);
+                    }
+                    else
+                    {
+                        treeItem.Foreground = new SolidColorBrush(Colors.DarkOrange);
+                    }
+                    treeItem.FontStyle = FontStyles.Italic; // Italics for branch devices
                 }
                 else
                 {
-                    treeItem.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                    // Main circuit devices
+                    if (node.Status == "⚠️ LOW")
+                    {
+                        treeItem.Foreground = new SolidColorBrush(Colors.Red);
+                        treeItem.FontWeight = FontWeights.Bold;
+                    }
+                    else if (node.Status == "⚠️")
+                    {
+                        treeItem.Foreground = new SolidColorBrush(Colors.Orange);
+                    }
+                    else
+                    {
+                        treeItem.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                    }
                 }
             }
 
@@ -501,12 +549,9 @@ namespace FireAlarmCircuitAnalysis.Views
             foreach (var child in node.Children)
             {
                 string childPrefix = prefix;
-                if (child.NodeType == "Branch")
+                if (child.IsBranchDevice)
                 {
-                    childPrefix = "  ";
-                }
-                else if (child.NodeType == "Device" && node.NodeType == "Branch")
-                {
+                    // Branch device - indent to show it's a child
                     childPrefix = "  └─ ";
                 }
 
@@ -568,7 +613,7 @@ namespace FireAlarmCircuitAnalysis.Views
             if (circuitManager == null)
             {
                 lblAnalysisAlarmLoad.Text = "0.000 A";
-                lblAnalysisStandbyLoad.Text = "0.000 A";
+                lblAnalysisStandbyLoad.Text = "TBD";
                 lblAnalysisUtilization.Text = "0%";
                 lblAnalysisTotalLength.Text = "0.0 ft";
                 lblAnalysisVoltageDrop.Text = "0.0 V";
@@ -592,7 +637,8 @@ namespace FireAlarmCircuitAnalysis.Views
             int totalTTaps = circuitManager.Branches.Count;
 
             lblAnalysisAlarmLoad.Text = $"{totalAlarmLoad:F3} A";
-            lblAnalysisStandbyLoad.Text = $"{totalStandbyLoad:F3} A";
+            // Standby load is TBD in the model - show as TBD if 0
+            lblAnalysisStandbyLoad.Text = totalStandbyLoad > 0 ? $"{totalStandbyLoad:F3} A" : "TBD";
             lblAnalysisUtilization.Text = $"{loadUtilization:F0}%";
             lblAnalysisTotalLength.Text = $"{totalLength:F1} ft";
             lblAnalysisVoltageDrop.Text = $"{voltageDrop:F2} V";
@@ -656,9 +702,21 @@ namespace FireAlarmCircuitAnalysis.Views
                     return;
                 }
 
-                lblStatusMessage.Text = "Creating wires...";
                 btnCreateWires.IsEnabled = false;
-                createWiresEvent.Raise();
+
+                // Check which routing mode is selected
+                if (rbManualRouting.IsChecked == true)
+                {
+                    // Manual routing mode
+                    lblStatusMessage.Text = "Starting manual wire routing...";
+                    manualWireRoutingEvent.Raise();
+                }
+                else
+                {
+                    // Automatic routing mode (default)
+                    lblStatusMessage.Text = "Creating wires automatically...";
+                    createWiresEvent.Raise();
+                }
             }
             catch (Exception ex)
             {
@@ -780,6 +838,8 @@ namespace FireAlarmCircuitAnalysis.Views
                     tvCircuit.Items.Clear();
                     dgDevices.ItemsSource = null;
                     UpdateStatusDisplay();
+                    UpdateSummaryPanel();
+                    UpdateAnalysisTab();  // Ensure Analysis tab is also reset
                     lblStatusMessage.Text = "Circuit cleared";
                     lblMode.Text = "IDLE";
                     btnCreateWires.IsEnabled = false;
@@ -1018,6 +1078,86 @@ namespace FireAlarmCircuitAnalysis.Views
             }
         }
 
+        /// <summary>
+        /// Zoom to selected device from tree view
+        /// </summary>
+        private void ZoomToSelectedDevice()
+        {
+            try
+            {
+                var selectedTreeItem = tvCircuit.SelectedItem as TreeViewItem;
+                if (selectedTreeItem?.Tag is CircuitNode node && node.ElementId != null)
+                {
+                    ZoomToDevice(node.ElementId);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ZoomToSelectedDevice failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Zoom to selected device from list view
+        /// </summary>
+        private void ZoomToSelectedDeviceFromList()
+        {
+            try
+            {
+                if (dgDevices.SelectedItem is DeviceListItem selectedItem && circuitManager != null)
+                {
+                    // Find the device ElementId by matching the name
+                    var deviceElementId = circuitManager.MainCircuit.FirstOrDefault(id =>
+                        circuitManager.DeviceData.ContainsKey(id) &&
+                        circuitManager.DeviceData[id].Name == selectedItem.Name.Trim(' ', '└', '─'));
+
+                    if (deviceElementId != null)
+                    {
+                        ZoomToDevice(deviceElementId);
+                    }
+                    else
+                    {
+                        // Check branch devices
+                        foreach (var kvp in circuitManager.Branches)
+                        {
+                            var branchDevice = kvp.Value.FirstOrDefault(id =>
+                                circuitManager.DeviceData.ContainsKey(id) &&
+                                circuitManager.DeviceData[id].Name == selectedItem.Name.Trim(' ', '└', '─'));
+                            if (branchDevice != null)
+                            {
+                                ZoomToDevice(branchDevice);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ZoomToSelectedDeviceFromList failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Zoom to a specific device using Revit API
+        /// </summary>
+        private void ZoomToDevice(ElementId elementId)
+        {
+            try
+            {
+                if (elementId == null || elementId == ElementId.InvalidElementId) return;
+
+                // Create external event for zoom operation since it needs Revit API context
+                var zoomHandler = new ZoomToDeviceEventHandler { DeviceId = elementId };
+                var zoomEvent = ExternalEvent.Create(zoomHandler);
+                zoomEvent.Raise();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ZoomToDevice failed: {ex.Message}");
+            }
+        }
+
         public void Dispose()
         {
             Dispose(true);
@@ -1041,6 +1181,10 @@ namespace FireAlarmCircuitAnalysis.Views
                 createWiresEvent = null;
                 createWiresHandler = null;
 
+                manualWireRoutingEvent?.Dispose();
+                manualWireRoutingEvent = null;
+                manualWireRoutingHandler = null;
+
                 removeDeviceEvent?.Dispose();
                 removeDeviceEvent = null;
                 removeDeviceHandler = null;
@@ -1048,6 +1192,10 @@ namespace FireAlarmCircuitAnalysis.Views
                 clearCircuitEvent?.Dispose();
                 clearCircuitEvent = null;
                 clearCircuitHandler = null;
+
+                clearOverridesEvent?.Dispose();
+                clearOverridesEvent = null;
+                clearOverridesHandler = null;
 
                 updateTimer?.Stop();
                 updateTimer = null;

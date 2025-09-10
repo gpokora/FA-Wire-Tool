@@ -48,8 +48,7 @@ namespace FireAlarmCircuitAnalysis
                     "• Real-time voltage drop calculations\n" +
                     "• T-tap branch circuit support\n" +
                     "• Load management with safety margins\n" +
-                    "• Automatic wire routing and creation\n" +
-                    "• NFPA 72 compliance checking";
+                    "• Automatic wire routing and creation";
                 mainButtonData.AvailabilityClassName =
                     "FireAlarmCircuitAnalysis.CommandAvailability";
 
@@ -75,19 +74,6 @@ namespace FireAlarmCircuitAnalysis
 
                 // Add separator
                 panel.AddSeparator();
-
-                // Create device selection button
-                PushButtonData selectionButtonData = new PushButtonData(
-                    "DeviceSelection",
-                    "Select\nDevices",
-                    assemblyPath,
-                    "FireAlarmCircuitAnalysis.DeviceSelectionCommand"
-                );
-
-                selectionButtonData.ToolTip = "Interactive fire alarm device selection";
-                selectionButtonData.LongDescription = "Select fire alarm devices interactively using proper Revit API patterns";
-
-                PushButton selectionButton = panel.AddItem(selectionButtonData) as PushButton;
 
                 // Create help button
                 PushButtonData helpButtonData = new PushButtonData(
@@ -189,7 +175,6 @@ namespace FireAlarmCircuitAnalysis
                     "FEATURES:\n" +
                     "• Real-time voltage drop calculations\n" +
                     "• Automatic load management\n" +
-                    "• NFPA 72 compliance checking\n" +
                     "• T-tap branch support\n" +
                     "• Visual circuit hierarchy\n\n" +
                     "KEYBOARD SHORTCUTS:\n" +

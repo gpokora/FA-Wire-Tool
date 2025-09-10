@@ -248,7 +248,8 @@ namespace FireAlarmCircuitAnalysis
 
         private CurrentData GetCurrentDraw(Element element, Document doc)
         {
-            var currentData = new CurrentData { Alarm = 0.030, Standby = 0.030, Found = false };
+            // Initialize with default alarm current, standby is 0 (TBD in model)
+            var currentData = new CurrentData { Alarm = 0.030, Standby = 0.0, Found = false };
 
             try
             {
@@ -266,7 +267,7 @@ namespace FireAlarmCircuitAnalysis
                         if (paramName.Contains("ALARM"))
                             currentData.Alarm = value;
                         else if (paramName.Contains("STANDBY"))
-                            currentData.Standby = value;
+                            currentData.Standby = value;  // Only set if explicitly found
                         else
                             currentData.Alarm = value; // Default to alarm current
 
@@ -302,11 +303,8 @@ namespace FireAlarmCircuitAnalysis
                     }
                 }
 
-                // Ensure standby matches alarm if not explicitly set
-                if (currentData.Standby == 0.030 && currentData.Alarm != 0.030)
-                {
-                    currentData.Standby = currentData.Alarm;
-                }
+                // Standby current is TBD in the model - keep it as 0.0 unless explicitly set
+                // Do not default standby to alarm value
             }
             catch (Exception ex)
             {

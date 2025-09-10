@@ -65,8 +65,8 @@
                     <ColumnDefinition Width="200"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- System Parameters -->
-                <GroupBox Grid.Column="0" Header="SYSTEM PARAMETERS" 
+                <!-- System Settings -->
+                <GroupBox Grid.Column="0" Header="SYSTEM SETTINGS" 
                          Style="{StaticResource ModernGroupBox}">
                     <Grid Margin="10">
                         <Grid.ColumnDefinitions>
@@ -78,6 +78,8 @@
                             <RowDefinition Height="30"/>
                             <RowDefinition Height="30"/>
                             <RowDefinition Height="30"/>
+                            <RowDefinition Height="10"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="System Voltage:" 
@@ -109,6 +111,18 @@
                                   VerticalAlignment="Center"/>
                         <TextBox Grid.Row="3" Grid.Column="1" Name="txtSupplyDistance" 
                                 Text="50" Style="{StaticResource ModernTextBox}"/>
+
+                        <!-- Wire Routing Mode -->
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Wire Routing:" 
+                                  VerticalAlignment="Top" Margin="0,5,0,0"/>
+                        <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,2,0,0">
+                            <RadioButton Name="rbAutomaticRouting" Content="Automatic" 
+                                       IsChecked="True" Margin="0,0,0,3" FontSize="11"
+                                       ToolTip="Automatic wire routing with arc paths"/>
+                            <RadioButton Name="rbManualRouting" Content="Manual" 
+                                       Margin="0,0,0,0" FontSize="11"
+                                       ToolTip="Manual wire routing - select points for each wire"/>
+                        </StackPanel>
                     </Grid>
                 </GroupBox>
 
@@ -151,7 +165,6 @@
                     </Grid>
                 </GroupBox>
 
-
                 <!-- Control Buttons -->
                 <StackPanel Grid.Column="2" Margin="10" VerticalAlignment="Center">
                     <Button Name="btnStartSelection" Content="START SELECTION" 
@@ -170,6 +183,12 @@
                            Height="35" Style="{StaticResource DangerButton}"
                            Click="BtnClearCircuit_Click"
                            ToolTip="Clear all circuit data (Ctrl+Shift+C)"/>
+                    
+                    <!-- Zoom to Selected Device Checkbox -->
+                    <CheckBox Name="chkZoomToSelected" Content="Zoom to Selected" 
+                             Margin="0,10,0,0" FontSize="12" FontWeight="Medium"
+                             Foreground="#2C3E50" IsChecked="False"
+                             ToolTip="Automatically zoom to device when selected in tree or list view"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -275,7 +294,7 @@
                                    ToolTip="Load saved circuit configuration"/>
                             <Button Content="Validate" Margin="2" Padding="8,3"
                                    Click="BtnValidate_Click" IsEnabled="False" Name="btnValidate"
-                                   ToolTip="Validate circuit against NFPA 72"/>
+                                   ToolTip="Validate circuit configuration"/>
                             <Button Content="Export" Margin="2" Padding="8,3"
                                    Click="BtnExport_Click" IsEnabled="False" Name="btnExport"
                                    ToolTip="Export circuit report"/>

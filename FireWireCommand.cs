@@ -124,11 +124,17 @@ namespace FireAlarmCircuitAnalysis
                     var createWiresHandler = new CreateWiresEventHandler();
                     var createWiresEvent = ExternalEvent.Create(createWiresHandler);
                     
+                    var manualWireRoutingHandler = new ManualWireRoutingEventHandler();
+                    var manualWireRoutingEvent = ExternalEvent.Create(manualWireRoutingHandler);
+                    
                     var removeDeviceHandler = new RemoveDeviceEventHandler();
                     var removeDeviceEvent = ExternalEvent.Create(removeDeviceHandler);
                     
                     var clearCircuitHandler = new ClearCircuitEventHandler();
                     var clearCircuitEvent = ExternalEvent.Create(clearCircuitHandler);
+                    
+                    var clearOverridesHandler = new ClearOverridesEventHandler();
+                    var clearOverridesEvent = ExternalEvent.Create(clearOverridesHandler);
                     
                     var initializationHandler = new InitializationEventHandler();
                     var initializationEvent = ExternalEvent.Create(initializationHandler);
@@ -137,8 +143,10 @@ namespace FireAlarmCircuitAnalysis
                     var window = new Views.FireAlarmCircuitWindow(
                         selectionHandler, selectionEvent,
                         createWiresHandler, createWiresEvent,
+                        manualWireRoutingHandler, manualWireRoutingEvent,
                         removeDeviceHandler, removeDeviceEvent,
                         clearCircuitHandler, clearCircuitEvent,
+                        clearOverridesHandler, clearOverridesEvent,
                         initializationHandler, initializationEvent);
                     window.Show();  // Use Show() instead of ShowDialog() for modeless
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Electrical;
+using Newtonsoft.Json;
 
 namespace FireAlarmCircuitAnalysis
 {
@@ -150,14 +151,25 @@ namespace FireAlarmCircuitAnalysis
                     node.DistanceFromParent = 25.0; // Safe default
                 }
                 
-                // Add to tree safely
+                // Add to tree safely - form sequential chain
                 try
                 {
                     if (RootNode != null && node != null)
                     {
-                        RootNode.AddChild(node);
+                        if (CurrentNode == null || CurrentNode == RootNode)
+                        {
+                            // First device - add as child of root
+                            RootNode.AddChild(node);
+                            System.Diagnostics.Debug.WriteLine($"TREE: Added {node.Name} as child of ROOT");
+                        }
+                        else
+                        {
+                            // Subsequent devices - add as child of previous device (form chain)
+                            CurrentNode.AddChild(node);
+                            System.Diagnostics.Debug.WriteLine($"TREE: Added {node.Name} as child of {CurrentNode.Name}");
+                        }
                         NodeMap[deviceId] = node;
-                        CurrentNode = node;
+                        CurrentNode = node; // This device becomes the new current node
                     }
                 }
                 catch (Exception ex)
@@ -171,9 +183,12 @@ namespace FireAlarmCircuitAnalysis
                 {
                     if (RootNode != null && Parameters != null)
                     {
-                        RootNode.UpdateVoltages(Parameters.SystemVoltage, Parameters.Resistance);
+                        UpdateTreeVoltages();
                     }
                     UpdateStatistics();
+                    
+                    // Trigger UI update to refresh tree view with new voltages
+                    TriggerUIUpdate();
                 }
                 catch (Exception ex)
                 {
@@ -214,19 +229,6 @@ namespace FireAlarmCircuitAnalysis
             {
                 Branches[tapId] = new List<ElementId>();
                 BranchNames[tapId] = $"T-Tap {branchCounter++}";
-                
-                // Create branch node if needed
-                if (NodeMap.ContainsKey(tapId))
-                {
-                    var tapNode = NodeMap[tapId];
-                    if (!tapNode.Children.Any(c => c.NodeType == "Branch"))
-                    {
-                        var branchNode = new CircuitNode(BranchNames[tapId], "Branch");
-                        branchNode.DistanceFromParent = 0; // Branch starts at tap point
-                        tapNode.AddChild(branchNode);
-                        CurrentNode = branchNode;
-                    }
-                }
             }
 
             if (!Branches[tapId].Contains(deviceId))
@@ -234,43 +236,53 @@ namespace FireAlarmCircuitAnalysis
                 Branches[tapId].Add(deviceId);
                 DeviceData[deviceId] = data;
                 
-                // Add to tree
+                // Add branch device directly as child of tap device
                 var node = new CircuitNode(data.Name, "Device", deviceId);
                 node.DeviceData = data;
+                node.IsBranchDevice = true; // Mark as branch device
                 
-                // Find the branch node
-                var tapNode = NodeMap[tapId];
-                var branchNode = tapNode.Children.FirstOrDefault(c => c.NodeType == "Branch");
-                
-                if (branchNode != null)
+                // Find the tap node and add device to branch chain
+                if (NodeMap.ContainsKey(tapId))
                 {
-                    // Calculate distance from previous device in branch
-                    if (branchNode.Children.Count > 0)
+                    var tapNode = NodeMap[tapId];
+                    
+                    // Find existing branch devices to form sequential chain
+                    var existingBranchDevices = GetBranchDevicesRecursive(tapNode);
+                    
+                    if (existingBranchDevices.Count > 0)
                     {
-                        var prevDevice = branchNode.Children.Last();
-                        if (prevDevice.DeviceData != null && data.Connector != null)
+                        // Add as child of the last branch device (continue branch chain)
+                        var prevBranchDevice = existingBranchDevices.Last();
+                        if (prevBranchDevice.DeviceData != null && data.Connector != null)
                         {
-                            node.DistanceFromParent = GetSegmentLength(prevDevice.DeviceData.Connector, data.Connector);
+                            node.DistanceFromParent = GetSegmentLength(prevBranchDevice.DeviceData.Connector, data.Connector);
                         }
+                        prevBranchDevice.AddChild(node);
+                        System.Diagnostics.Debug.WriteLine($"TREE: Added T-tap {node.Name} as child of {prevBranchDevice.Name} (continuing branch chain)");
                     }
                     else
                     {
-                        // First device in branch - distance from tap
+                        // First device in branch - add as child of tap node
                         var tapData = DeviceData[tapId];
                         if (tapData?.Connector != null && data.Connector != null)
                         {
                             node.DistanceFromParent = GetSegmentLength(tapData.Connector, data.Connector);
                         }
+                        tapNode.AddChild(node);
+                        System.Diagnostics.Debug.WriteLine($"TREE: Added T-tap {node.Name} as child of {tapNode.Name} (first branch device)");
                     }
                     
-                    branchNode.AddChild(node);
                     NodeMap[deviceId] = node;
-                    CurrentNode = node;
+                    // DON'T change CurrentNode - main chain should continue from tap point
+                    System.Diagnostics.Debug.WriteLine($"CurrentNode stays at {CurrentNode?.Name}");
                 }
                 
-                // Update voltages in tree
-                RootNode.UpdateVoltages(Parameters.SystemVoltage, Parameters.Resistance);
+                // Update voltages in tree using proper calculation
+                UpdateTreeVoltages();
                 UpdateStatistics();
+                
+                // Trigger UI update to refresh tree view with new voltages
+                TriggerUIUpdate();
             }
         }
 
@@ -279,16 +291,22 @@ namespace FireAlarmCircuitAnalysis
             if (deviceId == null)
                 return (null, 0);
 
+            string location = null;
+            int position = 0;
+
             // Check main circuit
             if (MainCircuit.Contains(deviceId))
             {
-                int position = MainCircuit.IndexOf(deviceId) + 1;
+                position = MainCircuit.IndexOf(deviceId) + 1;
+                location = "main";
 
-                // Remove any branches from this device
+                // Remove any branches from this device first
                 if (Branches.ContainsKey(deviceId))
                 {
+                    // Remove branch devices from tree
                     foreach (var branchDev in Branches[deviceId].ToList())
                     {
+                        RemoveNodeFromTree(branchDev);
                         if (DeviceData.ContainsKey(branchDev))
                             DeviceData.Remove(branchDev);
                     }
@@ -298,40 +316,72 @@ namespace FireAlarmCircuitAnalysis
                         BranchNames.Remove(deviceId);
                 }
 
+                // Remove from main circuit data
                 MainCircuit.Remove(deviceId);
                 if (DeviceData.ContainsKey(deviceId))
                     DeviceData.Remove(deviceId);
-
-                UpdateStatistics();
-                return ("main", position);
             }
-
-            // Check branches - use ToList() to avoid modification during iteration
-            foreach (var kvp in Branches.ToList())
+            else
             {
-                if (kvp.Value.Contains(deviceId))
+                // Check branches - use ToList() to avoid modification during iteration
+                foreach (var kvp in Branches.ToList())
                 {
-                    int position = kvp.Value.IndexOf(deviceId) + 1;
-                    string branchName = BranchNames.ContainsKey(kvp.Key) ? BranchNames[kvp.Key] : "T-Tap";
-                    kvp.Value.Remove(deviceId);
-
-                    if (DeviceData.ContainsKey(deviceId))
-                        DeviceData.Remove(deviceId);
-
-                    // Clean up empty branches
-                    if (kvp.Value.Count == 0)
+                    if (kvp.Value.Contains(deviceId))
                     {
-                        Branches.Remove(kvp.Key);
-                        if (BranchNames.ContainsKey(kvp.Key))
-                            BranchNames.Remove(kvp.Key);
-                    }
+                        position = kvp.Value.IndexOf(deviceId) + 1;
+                        location = BranchNames.ContainsKey(kvp.Key) ? BranchNames[kvp.Key] : "T-Tap";
+                        
+                        kvp.Value.Remove(deviceId);
+                        if (DeviceData.ContainsKey(deviceId))
+                            DeviceData.Remove(deviceId);
 
-                    UpdateStatistics();
-                    return (branchName, position);
+                        // Clean up empty branches
+                        if (kvp.Value.Count == 0)
+                        {
+                            Branches.Remove(kvp.Key);
+                            if (BranchNames.ContainsKey(kvp.Key))
+                                BranchNames.Remove(kvp.Key);
+                        }
+                        break;
+                    }
                 }
             }
 
+            // Remove from tree structure regardless of location
+            if (location != null)
+            {
+                RemoveNodeFromTree(deviceId);
+                UpdateStatistics();
+                
+                System.Diagnostics.Debug.WriteLine($"REMOVE DEVICE - Device removed from {location} at position {position}");
+                return (location, position);
+            }
+
             return (null, 0);
+        }
+
+        /// <summary>
+        /// Remove a node from the tree structure
+        /// </summary>
+        private void RemoveNodeFromTree(ElementId deviceId)
+        {
+            if (RootNode == null || deviceId == null) return;
+
+            var nodeToRemove = RootNode.FindNode(deviceId);
+            if (nodeToRemove != null)
+            {
+                var parent = nodeToRemove.Parent;
+                if (parent != null)
+                {
+                    parent.RemoveChild(nodeToRemove);
+                    System.Diagnostics.Debug.WriteLine($"TREE REMOVE - Removed node '{nodeToRemove.Name}' from parent '{parent.Name}'");
+                }
+                else if (nodeToRemove == RootNode)
+                {
+                    // This shouldn't happen for devices, but just in case
+                    System.Diagnostics.Debug.WriteLine($"TREE REMOVE - Warning: Attempted to remove root node");
+                }
+            }
         }
 
         public double GetTotalSystemLoad()
@@ -435,59 +485,69 @@ namespace FireAlarmCircuitAnalysis
             if (deviceId == null || Parameters == null)
                 return Parameters?.SystemVoltage ?? 24.0;
 
-            double cumulativeDist = Parameters.SupplyDistance;
-            double cumulativeDrop = 0.0;
-
             int deviceIndex = MainCircuit.IndexOf(deviceId);
             if (deviceIndex < 0)
                 return Parameters.SystemVoltage;
 
-            // Calculate cumulative current and distance up to this device
+            // PyRevit approach: cumulative current and distance calculation
+            double cumulativeDist = Parameters.SupplyDistance;
+            double cumulativeCurrent = 0.0;
+
+            // Loop through devices from 0 to target device (PyRevit lines 125-144)
             for (int i = 0; i <= deviceIndex; i++)
             {
                 var currentDevId = MainCircuit[i];
-
-                // Calculate current from this point onwards
-                double segmentCurrent = 0.0;
-                for (int j = i; j < MainCircuit.Count; j++)
+                
+                // Add current of this device to cumulative (PyRevit line 126)
+                if (DeviceData.ContainsKey(currentDevId))
                 {
-                    if (DeviceData.ContainsKey(MainCircuit[j]))
-                    {
-                        segmentCurrent += DeviceData[MainCircuit[j]].Current.Alarm;
+                    double deviceCurrent = DeviceData[currentDevId].Current.Alarm;
+                    cumulativeCurrent += deviceCurrent;
+                    System.Diagnostics.Debug.WriteLine($"  Adding main device {i}: {DeviceData[currentDevId].Name} = {deviceCurrent:F3}A");
+                }
 
-                        // Add branch currents
-                        if (Branches.ContainsKey(MainCircuit[j]))
+                // Add branch currents at this device (PyRevit lines 128-130)
+                if (Branches.ContainsKey(currentDevId))
+                {
+                    foreach (var branchDevId in Branches[currentDevId])
+                    {
+                        if (DeviceData.ContainsKey(branchDevId))
                         {
-                            foreach (var branchDevId in Branches[MainCircuit[j]])
-                            {
-                                if (DeviceData.ContainsKey(branchDevId))
-                                    segmentCurrent += DeviceData[branchDevId].Current.Alarm;
-                            }
+                            double branchCurrent = DeviceData[branchDevId].Current.Alarm;
+                            cumulativeCurrent += branchCurrent;
+                            System.Diagnostics.Debug.WriteLine($"  Adding branch device: {DeviceData[branchDevId].Name} = {branchCurrent:F3}A");
                         }
                     }
                 }
 
-                // Calculate distance to next device
-                double segmentDist = 0.0;
-                if (i == 0)
-                {
-                    segmentDist = Parameters.SupplyDistance;
-                }
-                else if (i > 0 && DeviceData.ContainsKey(MainCircuit[i - 1]) && DeviceData.ContainsKey(currentDevId))
+                // Add segment distance (from previous device to this one) - PyRevit lines 132-138
+                if (i > 0 && DeviceData.ContainsKey(MainCircuit[i - 1]) && DeviceData.ContainsKey(currentDevId))
                 {
                     var prevData = DeviceData[MainCircuit[i - 1]];
                     var currData = DeviceData[currentDevId];
-                    segmentDist = GetSegmentLength(prevData.Connector, currData.Connector);
+                    double segmentDist = GetSegmentLength(prevData.Connector, currData.Connector);
+                    cumulativeDist += segmentDist;
+                    System.Diagnostics.Debug.WriteLine($"  Adding segment distance: {segmentDist:F1}ft");
                 }
 
-                // Calculate voltage drop for this segment
-                cumulativeDrop += CalculateVoltageDrop(segmentCurrent, segmentDist);
-
+                // If this is our target device, calculate voltage at this point (PyRevit lines 140-144)
                 if (currentDevId == deviceId)
-                    break;
+                {
+                    System.Diagnostics.Debug.WriteLine($"  Total cumulative current: {cumulativeCurrent:F3}A");
+                    System.Diagnostics.Debug.WriteLine($"  Total cumulative distance: {cumulativeDist:F1}ft");
+                    
+                    double voltageDrop = CalculateVoltageDrop(cumulativeCurrent, cumulativeDist);
+                    double voltage = Parameters.SystemVoltage - voltageDrop;
+                    
+                    // Debug output
+                    var deviceName = DeviceData[deviceId].Name;
+                    System.Diagnostics.Debug.WriteLine($"MAIN CIRCUIT - Device: {deviceName}, Index: {i}, Current: {cumulativeCurrent:F3}A, Distance: {cumulativeDist:F1}ft, Drop: {voltageDrop:F2}V, Voltage: {voltage:F1}V");
+                    
+                    return voltage;
+                }
             }
 
-            return Parameters.SystemVoltage - cumulativeDrop;
+            return Parameters.SystemVoltage;
         }
 
         private double CalculateBranchVoltage(ElementId deviceId, ElementId tapPointId)
@@ -495,53 +555,61 @@ namespace FireAlarmCircuitAnalysis
             if (deviceId == null || tapPointId == null || !Branches.ContainsKey(tapPointId))
                 return Parameters?.SystemVoltage ?? 24.0;
 
-            // Get voltage at tap point
+            // Get voltage at tap point (PyRevit line 147)
             double tapVoltage = GetVoltageAtDevice(tapPointId, "main");
-
+            
             var branchDevices = Branches[tapPointId];
             if (!branchDevices.Contains(deviceId))
                 return tapVoltage;
 
             int deviceIndex = branchDevices.IndexOf(deviceId);
-
-            // Calculate branch distance and current
-            double branchDist = 0.0;
-            double cumulativeDrop = 0.0;
-
-            // Distance from tap to first branch device
-            if (!DeviceData.ContainsKey(tapPointId) || !DeviceData.ContainsKey(branchDevices[0]))
+            
+            if (!DeviceData.ContainsKey(tapPointId))
                 return tapVoltage;
 
             var tapData = DeviceData[tapPointId];
-            var firstBranchData = DeviceData[branchDevices[0]];
-
-            for (int i = 0; i <= deviceIndex; i++)
+            
+            // Calculate branch distance (PyRevit lines 156-167)
+            double branchDist = GetSegmentLength(
+                tapData.Connector,
+                DeviceData[branchDevices[0]].Connector
+            );
+            
+            // Add distances between branch devices up to our target device
+            for (int i = 0; i < deviceIndex; i++)
             {
-                // Calculate current from this point onwards in the branch
-                double segmentCurrent = 0.0;
-                for (int j = i; j < branchDevices.Count; j++)
+                if (DeviceData.ContainsKey(branchDevices[i]) && DeviceData.ContainsKey(branchDevices[i + 1]))
                 {
-                    if (DeviceData.ContainsKey(branchDevices[j]))
-                        segmentCurrent += DeviceData[branchDevices[j]].Current.Alarm;
-                }
-
-                // Calculate segment distance
-                double segmentDist = 0.0;
-                if (i == 0)
-                {
-                    segmentDist = GetSegmentLength(tapData.Connector, firstBranchData.Connector);
-                }
-                else if (i > 0 && DeviceData.ContainsKey(branchDevices[i - 1]) && DeviceData.ContainsKey(branchDevices[i]))
-                {
-                    var prevData = DeviceData[branchDevices[i - 1]];
                     var currData = DeviceData[branchDevices[i]];
-                    segmentDist = GetSegmentLength(prevData.Connector, currData.Connector);
+                    var nextData = DeviceData[branchDevices[i + 1]];
+                    branchDist += GetSegmentLength(currData.Connector, nextData.Connector);
                 }
-
-                cumulativeDrop += CalculateVoltageDrop(segmentCurrent, segmentDist);
             }
-
-            return tapVoltage - cumulativeDrop;
+            
+            // Calculate cumulative branch current (PyRevit lines 169-172)
+            // ALL branch devices up to and including this device
+            double cumulativeBranchCurrent = 0.0;
+            for (int j = 0; j <= deviceIndex; j++)
+            {
+                if (DeviceData.ContainsKey(branchDevices[j]))
+                {
+                    cumulativeBranchCurrent += DeviceData[branchDevices[j]].Current.Alarm;
+                }
+            }
+            
+            // Calculate voltage drop and return final voltage (PyRevit lines 174-177)
+            double voltageDrop = CalculateVoltageDrop(cumulativeBranchCurrent, branchDist);
+            double voltage = tapVoltage - voltageDrop;
+            
+            // Debug output
+            if (DeviceData.ContainsKey(deviceId))
+            {
+                var deviceName = DeviceData[deviceId].Name;
+                var tapName = tapData.Name;
+                System.Diagnostics.Debug.WriteLine($"T-TAP BRANCH - Device: {deviceName} (tap: {tapName}), Index: {deviceIndex}, Current: {cumulativeBranchCurrent:F3}A, Distance: {branchDist:F1}ft, Drop: {voltageDrop:F2}V, Voltage: {voltage:F1}V");
+            }
+            
+            return voltage;
         }
 
         public double CalculateTotalWireLength()
@@ -793,8 +861,8 @@ namespace FireAlarmCircuitAnalysis
             // Rebuild internal structures from tree
             RebuildFromTree(RootNode);
             
-            // Update voltages and statistics
-            RootNode.UpdateVoltages(Parameters.SystemVoltage, Parameters.Resistance);
+            // Update voltages and statistics  
+            UpdateTreeVoltages();
             UpdateStatistics();
         }
         
@@ -803,22 +871,23 @@ namespace FireAlarmCircuitAnalysis
             if (node.ElementId != null && node.DeviceData != null)
             {
                 // Add to appropriate list
-                if (node.Parent == RootNode || (node.Parent != null && node.Parent.NodeType == "Device"))
+                if (node.IsBranchDevice)
                 {
-                    MainCircuit.Add(node.ElementId);
-                }
-                else if (node.Parent != null && node.Parent.NodeType == "Branch")
-                {
-                    var tapNode = node.Parent.Parent;
+                    // This is a branch device - parent should be the tap device
+                    var tapNode = node.Parent;
                     if (tapNode != null && tapNode.ElementId != null)
                     {
                         if (!Branches.ContainsKey(tapNode.ElementId))
                         {
                             Branches[tapNode.ElementId] = new List<ElementId>();
-                            BranchNames[tapNode.ElementId] = node.Parent.Name;
+                            BranchNames[tapNode.ElementId] = $"T-Tap from {tapNode.Name}";
                         }
                         Branches[tapNode.ElementId].Add(node.ElementId);
                     }
+                }
+                else if (node.Parent == RootNode || (node.Parent != null && node.Parent.NodeType == "Device"))
+                {
+                    MainCircuit.Add(node.ElementId);
                 }
                 
                 DeviceData[node.ElementId] = node.DeviceData;
@@ -831,6 +900,125 @@ namespace FireAlarmCircuitAnalysis
                 RebuildFromTree(child);
             }
         }
+        
+        /// <summary>
+        /// Update tree voltages using proper parent-child tree traversal
+        /// </summary>
+        private void UpdateTreeVoltages()
+        {
+            try
+            {
+                if (RootNode == null) return;
+                
+                // Set root voltage
+                RootNode.Voltage = Parameters.SystemVoltage;
+                RootNode.VoltageDrop = 0;
+                
+                System.Diagnostics.Debug.WriteLine($"ROOT NODE - {RootNode.Name}: {RootNode.Voltage:F1}V");
+                
+                // Update voltages for all children recursively
+                foreach (var child in RootNode.Children)
+                {
+                    UpdateNodeVoltageRecursive(child);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"UpdateTreeVoltages failed: {ex.Message}");
+            }
+        }
+        
+        private void UpdateNodeVoltageRecursive(CircuitNode node)
+        {
+            if (node?.Parent == null)
+                return;
+
+            // Calculate current flowing THROUGH wire TO this node (all downstream devices)
+            double currentThroughWire = CalculateCurrentThroughWire(node);
+            
+            // Get distance from parent to this node
+            double segmentDistance = node.DistanceFromParent;
+            
+            // Calculate voltage drop for this segment only
+            double segmentVoltageDrop = CalculateVoltageDrop(currentThroughWire, segmentDistance);
+            
+            // Node voltage = Parent voltage - segment drop
+            node.Voltage = node.Parent.Voltage - segmentVoltageDrop;
+            node.VoltageDrop = segmentVoltageDrop;
+            node.UpdateStatus();
+            
+            // Debug output
+            var deviceName = node.Name ?? "Unknown";
+            var parentName = node.Parent.Name ?? "Unknown";
+            System.Diagnostics.Debug.WriteLine($"NODE UPDATE - {deviceName}: Parent={parentName}({node.Parent.Voltage:F1}V), Current={currentThroughWire:F3}A, Distance={segmentDistance:F1}ft, Drop={segmentVoltageDrop:F2}V, Voltage={node.Voltage:F1}V");
+            
+            // Recursively update all children
+            foreach (var child in node.Children)
+            {
+                UpdateNodeVoltageRecursive(child);
+            }
+        }
+        
+        /// <summary>
+        /// Calculate total current flowing through wire TO this node (this node + all its descendants)
+        /// </summary>
+        private double CalculateCurrentThroughWire(CircuitNode node)
+        {
+            if (node == null) return 0.0;
+            
+            double totalCurrent = 0.0;
+            
+            // Add current from this node if it's a device
+            if (node.ElementId != null && DeviceData.ContainsKey(node.ElementId))
+            {
+                double deviceCurrent = DeviceData[node.ElementId].Current.Alarm;
+                totalCurrent += deviceCurrent;
+                System.Diagnostics.Debug.WriteLine($"    Adding current from this device {node.Name}: {deviceCurrent:F3}A");
+            }
+            
+            // Add current from all children recursively
+            foreach (var child in node.Children)
+            {
+                double childSubtreeCurrent = CalculateCurrentThroughWire(child);
+                totalCurrent += childSubtreeCurrent;
+            }
+            
+            System.Diagnostics.Debug.WriteLine($"    Total current through wire to {node.Name}: {totalCurrent:F3}A");
+            return totalCurrent;
+        }
+        
+        /// <summary>
+        /// Get all branch devices in order starting from a tap node
+        /// </summary>
+        private List<CircuitNode> GetBranchDevicesRecursive(CircuitNode tapNode)
+        {
+            var branchDevices = new List<CircuitNode>();
+            
+            // Find the first branch device (direct child of tap node that is a branch device)
+            var firstBranchDevice = tapNode.Children.FirstOrDefault(c => c.IsBranchDevice);
+            if (firstBranchDevice != null)
+            {
+                // Follow the branch chain
+                var current = firstBranchDevice;
+                while (current != null)
+                {
+                    branchDevices.Add(current);
+                    // Move to next branch device in chain (child that is a branch device)
+                    current = current.Children.FirstOrDefault(c => c.IsBranchDevice);
+                }
+            }
+            
+            return branchDevices;
+        }
+        
+        /// <summary>
+        /// Triggers UI update - to be called from UI thread
+        /// </summary>
+        private void TriggerUIUpdate()
+        {
+            // This will be implemented by the UI layer - for now just a placeholder
+            System.Diagnostics.Debug.WriteLine("TriggerUIUpdate: Voltage calculations complete, UI should refresh");
+        }
     }
 
     /// <summary>
@@ -838,15 +1026,37 @@ namespace FireAlarmCircuitAnalysis
     /// </summary>
     public class DeviceData
     {
+        [JsonIgnore]
         public Element Element { get; set; }
+        
+        [JsonIgnore]
         public Connector Connector { get; set; }
+        
         public CurrentData Current { get; set; }
         public string Name { get; set; }
         public string DeviceType { get; set; }
         public string Manufacturer { get; set; }
         public string Model { get; set; }
+        
+        // Store ElementId as integer for serialization
+        [JsonIgnore]
         public ElementId TypeId { get; set; }
+        
+        [JsonProperty("TypeId")]
+        public int TypeIdValue => TypeId?.IntegerValue ?? -1;
+        
+        // Store location as simple coordinates
+        [JsonIgnore]
         public XYZ Location { get; set; }
+        
+        [JsonProperty("LocationX")]
+        public double LocationX => Location?.X ?? 0;
+        
+        [JsonProperty("LocationY")]
+        public double LocationY => Location?.Y ?? 0;
+        
+        [JsonProperty("LocationZ")]
+        public double LocationZ => Location?.Z ?? 0;
     }
 
     /// <summary>

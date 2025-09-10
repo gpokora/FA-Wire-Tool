@@ -45,15 +45,6 @@ namespace FireAlarmCircuitAnalysis
                 }
             }
             
-            // Load validation settings
-            var validation = configManager.Config.Validation;
-            if (validation != null)
-            {
-                chkNFPACompliance.IsChecked = validation.EnableNFPA72Compliance;
-                txtMaxVoltageDropPercent.Text = validation.MaxVoltageDropPercent.ToString("F1");
-                txtMinEOLVoltage.Text = validation.MinEndOfLineVoltage.ToString("F1");
-                txtMaxCircuitLength.Text = validation.MaxCircuitLength.ToString();
-            }
         }
 
         private void BtnSave_Click(object sender, RoutedEventArgs e)
@@ -77,17 +68,6 @@ namespace FireAlarmCircuitAnalysis
                     defaults.WireGauge = selectedWireGauge;
                 }
                 
-                // Save validation settings
-                if (configManager.Config.Validation == null)
-                {
-                    configManager.Config.Validation = new ValidationSettings();
-                }
-                
-                var validation = configManager.Config.Validation;
-                validation.EnableNFPA72Compliance = chkNFPACompliance.IsChecked ?? true;
-                validation.MaxVoltageDropPercent = double.Parse(txtMaxVoltageDropPercent.Text);
-                validation.MinEndOfLineVoltage = double.Parse(txtMinEOLVoltage.Text);
-                validation.MaxCircuitLength = int.Parse(txtMaxCircuitLength.Text);
                 
                 // Save configuration
                 configManager.SaveConfiguration();
@@ -126,11 +106,6 @@ namespace FireAlarmCircuitAnalysis
                 txtDefaultSupplyDistance.Text = "50.0";
                 txtRoutingOverhead.Text = "15";
                 cmbDefaultWireGauge.SelectedIndex = 1; // 16 AWG
-                
-                chkNFPACompliance.IsChecked = true;
-                txtMaxVoltageDropPercent.Text = "10.0";
-                txtMinEOLVoltage.Text = "16.0";
-                txtMaxCircuitLength.Text = "3000";
             }
         }
     }

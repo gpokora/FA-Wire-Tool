@@ -101,39 +101,6 @@
                             </Grid>
                         </GroupBox>
 
-                        <GroupBox Header="Validation Settings" Margin="0,0,0,10">
-                            <StackPanel Margin="10">
-                                <CheckBox Name="chkNFPACompliance" Content="Enable NFPA 72 compliance checking" 
-                                         IsChecked="True" Margin="0,5"/>
-                                
-                                <Grid Margin="0,10,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="200"/>
-                                        <ColumnDefinition Width="100"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="30"/>
-                                        <RowDefinition Height="30"/>
-                                        <RowDefinition Height="30"/>
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Max Voltage Drop (%):" 
-                                              VerticalAlignment="Center"/>
-                                    <TextBox Grid.Row="0" Grid.Column="1" Name="txtMaxVoltageDropPercent" 
-                                            Text="10.0"/>
-
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Min EOL Voltage (VDC):" 
-                                              VerticalAlignment="Center"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" Name="txtMinEOLVoltage" 
-                                            Text="16.0"/>
-
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Max Circuit Length (ft):" 
-                                              VerticalAlignment="Center"/>
-                                    <TextBox Grid.Row="2" Grid.Column="1" Name="txtMaxCircuitLength" 
-                                            Text="3000"/>
-                                </Grid>
-                            </StackPanel>
-                        </GroupBox>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

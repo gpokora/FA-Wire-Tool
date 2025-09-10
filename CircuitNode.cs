@@ -28,6 +28,7 @@ namespace FireAlarmCircuitAnalysis
         private double _accumulatedLoad;
         private double _distanceFromParent;
         private string _status;
+        private bool _isBranchDevice;
 
         public CircuitNode()
         {
@@ -111,7 +112,12 @@ namespace FireAlarmCircuitAnalysis
         public double Voltage
         {
             get => _voltage;
-            set { _voltage = value; OnPropertyChanged(); UpdateStatus(); }
+            set { 
+                _voltage = value; 
+                OnPropertyChanged(); 
+                OnPropertyChanged(nameof(DisplayName)); // Ensure DisplayName updates when voltage changes
+                UpdateStatus(); 
+            }
         }
 
         public double VoltageDrop
@@ -138,12 +144,34 @@ namespace FireAlarmCircuitAnalysis
             set { _status = value; OnPropertyChanged(); }
         }
 
+        public bool IsBranchDevice
+        {
+            get => _isBranchDevice;
+            set { _isBranchDevice = value; OnPropertyChanged(); }
+        }
+
         // Calculated Properties
         [JsonIgnore]
         public string Path { get; private set; }
 
         [JsonIgnore]
-        public int Depth => Parent == null ? 0 : Parent.Depth + 1;
+        public int Depth
+        {
+            get
+            {
+                int depth = 0;
+                CircuitNode current = Parent;
+                HashSet<CircuitNode> visited = new HashSet<CircuitNode>();
+                
+                while (current != null && visited.Add(current))
+                {
+                    depth++;
+                    current = current.Parent;
+                }
+                
+                return depth;
+            }
+        }
 
         [JsonIgnore]
         public bool HasChildren => Children != null && Children.Count > 0;
@@ -152,11 +180,27 @@ namespace FireAlarmCircuitAnalysis
         public bool IsBranch => NodeType == "Branch" || NodeType == "T-Tap";
 
         [JsonIgnore]
+        public bool HasTTapChildren => Children != null && Children.Any(c => c.IsBranchDevice);
+
+        [JsonIgnore]
         public string DisplayName
         {
             get
             {
                 var display = Name;
+                
+                // Add T-tap prefix for branch devices
+                if (IsBranchDevice)
+                {
+                    display = $"🔗 {display}";
+                }
+                
+                // Show distance from parent if not root
+                if (Parent != null && DistanceFromParent > 0)
+                {
+                    display = $"({DistanceFromParent:F1}ft) → {display}";
+                }
+                
                 if (DeviceData != null)
                 {
                     display += $" [{DeviceData.Current.Alarm:F3}A]";
@@ -180,7 +224,15 @@ namespace FireAlarmCircuitAnalysis
             {
                 var indent = new string(' ', Depth * 2);
                 var prefix = HasChildren ? (IsExpanded ? "▼ " : "▶ ") : "• ";
-                return $"{indent}{prefix}{DisplayName}";
+                
+                // Add T-tap indicator if this device has T-tap children
+                var ttapIndicator = "";
+                if (HasTTapChildren)
+                {
+                    ttapIndicator = HasChildren && !IsExpanded ? " [T-TAP]" : "";
+                }
+                
+                return $"{indent}{prefix}{DisplayName}{ttapIndicator}";
             }
         }
 
@@ -309,9 +361,6 @@ namespace FireAlarmCircuitAnalysis
                 child.UpdateAccumulatedLoad();
                 AccumulatedLoad += child.AccumulatedLoad;
             }
-            
-            // Propagate up
-            Parent?.UpdateAccumulatedLoad();
         }
 
         public void UpdateVoltages(double parentVoltage, double resistance)
@@ -319,8 +368,10 @@ namespace FireAlarmCircuitAnalysis
             // Calculate voltage at this node
             if (Parent != null && DistanceFromParent > 0)
             {
-                var current = AccumulatedLoad;
-                var drop = CalculateVoltageDrop(current, DistanceFromParent, resistance);
+                // For voltage drop calculation, we need the current flowing THROUGH this segment
+                // which is this device's load plus all its children's loads (already in AccumulatedLoad)
+                var segmentCurrent = AccumulatedLoad;
+                var drop = CalculateVoltageDrop(segmentCurrent, DistanceFromParent, resistance);
                 VoltageDrop = drop;
                 Voltage = parentVoltage - drop;
             }
@@ -330,7 +381,7 @@ namespace FireAlarmCircuitAnalysis
                 VoltageDrop = 0;
             }
             
-            // Update children
+            // Update children with the voltage at this node
             foreach (var child in Children)
             {
                 child.UpdateVoltages(Voltage, resistance);
@@ -339,7 +390,8 @@ namespace FireAlarmCircuitAnalysis
 
         private double CalculateVoltageDrop(double current, double distance, double resistance)
         {
-            // V = I * R, where R = (2 * distance / 1000) * resistance per 1000ft
+            // V = I * R, where R = (2 * distance / 1000) * resistance per 1000ft for single conductor
+            // Matches Python: total_resistance = (2.0 * float(distance) / 1000.0) * float(self.params['resistance'])
             return current * (2.0 * distance / 1000.0) * resistance;
         }
 
@@ -355,7 +407,7 @@ namespace FireAlarmCircuitAnalysis
             OnPropertyChanged(nameof(TreeDisplay));
         }
 
-        private void UpdateStatus()
+        public void UpdateStatus()
         {
             if (Voltage > 0 && DeviceData != null)
             {
@@ -372,7 +424,6 @@ namespace FireAlarmCircuitAnalysis
                     Status = "✓";
                 }
             }
-            UpdateDisplayProperties();
         }
 
         public void ExpandAll()
