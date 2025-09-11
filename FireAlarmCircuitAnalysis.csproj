@@ -11,6 +11,7 @@
     <Configurations>Debug;Release;Debug 2021;Debug 2022;Debug 2023;Debug 2024</Configurations>
     <Platforms>AnyCPU</Platforms>
     <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -72,7 +73,7 @@
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="EPPlus" Version="5.8.15" />
+    <PackageReference Include="NPOI" Version="2.5.6" />
     <PackageReference Include="iTextSharp" Version="5.5.13.3" />
     <PackageReference Include="NLog" Version="5.2.5" />
   </ItemGroup>
@@ -116,6 +117,6 @@
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="xcopy &quot;$(TargetPath)&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.json&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.addin&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\&quot; /Y" />
+    <Exec Command="xcopy &quot;$(TargetPath)&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.json&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)Newtonsoft.Json.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)NPOI*.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)ICSharpCode.SharpZipLib.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)iTextSharp.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)NLog.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.addin&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\&quot; /Y" />
   </Target>
 </Project>

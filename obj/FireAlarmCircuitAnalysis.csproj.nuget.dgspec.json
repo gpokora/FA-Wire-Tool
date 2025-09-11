@@ -55,13 +55,13 @@
         "net48": {
           "targetAlias": "net48",
           "dependencies": {
-            "EPPlus": {
-              "target": "Package",
-              "version": "[5.8.15, )"
-            },
             "NLog": {
               "target": "Package",
               "version": "[5.2.5, )"
+            },
+            "NPOI": {
+              "target": "Package",
+              "version": "[2.5.6, )"
             },
             "Newtonsoft.Json": {
               "target": "Package",

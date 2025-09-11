@@ -23,7 +23,11 @@ echo Copying files...
 xcopy "%OUTPUT_PATH%\FireAlarmCircuitAnalysis.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
 xcopy "%OUTPUT_PATH%\*.json" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
 xcopy "%OUTPUT_PATH%\Newtonsoft.Json.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
-xcopy "%OUTPUT_PATH%\EPPlus.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
+xcopy "%OUTPUT_PATH%\NPOI.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
+xcopy "%OUTPUT_PATH%\NPOI.OOXML.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
+xcopy "%OUTPUT_PATH%\NPOI.OpenXml4Net.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
+xcopy "%OUTPUT_PATH%\NPOI.OpenXmlFormats.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
+xcopy "%OUTPUT_PATH%\ICSharpCode.SharpZipLib.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
 xcopy "%OUTPUT_PATH%\NLog.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
 xcopy "%OUTPUT_PATH%\FireAlarmCircuitAnalysis.addin" "%ADDIN_PATH%\" /Y
 
