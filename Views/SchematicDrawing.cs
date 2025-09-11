@@ -17,14 +17,14 @@ namespace FireAlarmCircuitAnalysis.Views
         private CircuitManager _circuitManager;
         private Dictionary<CircuitNode, SchematicDevice> _deviceMap;
         private double _scale = 1.0;
-        private double _minDeviceSpacing = 120;
-        private double _branchVerticalSpacing = 100;
-        private double _margin = 50;
+        private double _minDeviceSpacing = 150;
+        private double _branchVerticalSpacing = 120;
+        private double _margin = 60;
         
-        // Diagrammatic dimensions
-        private const double DeviceBoxWidth = 80;
-        private const double DeviceBoxHeight = 40;
-        private const double WireThickness = 2;
+        // Diagrammatic dimensions - reduced sizes
+        private const double DeviceBoxWidth = 60;
+        private const double DeviceBoxHeight = 30;
+        private const double WireThickness = 1.5;
         
         // Professional colors for clean diagram
         private readonly SolidColorBrush PanelColor = new SolidColorBrush(Color.FromRgb(70, 130, 180)); // Steel Blue
@@ -77,6 +77,56 @@ namespace FireAlarmCircuitAnalysis.Views
             // Add labels
             AddLabels();
         }
+        
+        public void DrawFQQCircuit()
+        {
+            _canvas.Children.Clear();
+            _deviceMap.Clear();
+            
+            if (_circuitManager?.RootNode == null) return;
+            
+            // FQQ style uses horizontal layout with proper topology
+            var layoutInfo = CalculateFQQLayout();
+            
+            // Set canvas size for FQQ format
+            _canvas.Width = layoutInfo.TotalWidth + (2 * _margin);
+            _canvas.Height = layoutInfo.TotalHeight + (2 * _margin);
+            
+            // Draw clean white background
+            var background = new Rectangle
+            {
+                Width = _canvas.Width,
+                Height = _canvas.Height,
+                Fill = Brushes.White,
+                Stroke = Brushes.Black,
+                StrokeThickness = 1
+            };
+            _canvas.Children.Add(background);
+            
+            // Draw FQQ circuit header
+            DrawFQQHeader();
+            
+            // Calculate topology and position devices
+            PositionFQQDevices(layoutInfo);
+            
+            // Draw main circuit line
+            DrawFQQMainLine();
+            
+            // Draw devices with FQQ icons
+            DrawFQQDevices();
+            
+            // Draw branches and connections
+            DrawFQQBranches();
+            
+            // Add FQQ-style annotations
+            AddFQQAnnotations();
+            
+            // Draw circuit summary box
+            DrawFQQSummaryBox();
+            
+            // Add legend
+            DrawFQQLegend();
+        }
 
         private LayoutInfo CalculateLayout()
         {
@@ -88,9 +138,9 @@ namespace FireAlarmCircuitAnalysis.Views
             // Count maximum branch depth
             info.MaxBranchDepth = GetMaxBranchDepth(_circuitManager.RootNode);
             
-            // Calculate dimensions
-            info.TotalWidth = (info.MainCircuitCount + 1) * _minDeviceSpacing * _scale;
-            info.TotalHeight = 200 + (info.MaxBranchDepth * _branchVerticalSpacing * _scale);
+            // Calculate dimensions with extra space for labels
+            info.TotalWidth = (info.MainCircuitCount + 2) * _minDeviceSpacing * _scale + 300; // Extra space for legend
+            info.TotalHeight = 250 + (info.MaxBranchDepth * _branchVerticalSpacing * _scale) + 100; // Extra space for labels
             
             return info;
         }
@@ -137,7 +187,7 @@ namespace FireAlarmCircuitAnalysis.Views
             var title = new TextBlock
             {
                 Text = "FIRE ALARM CIRCUIT DIAGRAM",
-                FontSize = 18 * _scale,
+                FontSize = 16 * _scale,
                 FontWeight = FontWeights.Bold,
                 Foreground = TextColor
             };
@@ -145,8 +195,8 @@ namespace FireAlarmCircuitAnalysis.Views
             Canvas.SetTop(title, 10);
             _canvas.Children.Add(title);
             
-            // Legend
-            double legendX = _canvas.Width - 220;
+            // Legend - positioned to avoid overlap
+            double legendX = Math.Max(_canvas.Width - 250, _margin + 400);
             double legendY = 10;
             
             // Legend border
@@ -218,8 +268,8 @@ namespace FireAlarmCircuitAnalysis.Views
 
         private void PositionDevices(LayoutInfo layout)
         {
-            double mainY = _margin + 80;
-            double currentX = _margin;
+            double mainY = _margin + 100;
+            double currentX = _margin + 50;
             
             // Position panel
             var panelDevice = new SchematicDevice
@@ -231,7 +281,7 @@ namespace FireAlarmCircuitAnalysis.Views
             };
             _deviceMap[_circuitManager.RootNode] = panelDevice;
             
-            currentX += _minDeviceSpacing * _scale;
+            currentX += (_minDeviceSpacing + 20) * _scale;
             
             // Position main circuit devices
             PositionMainCircuitDevices(_circuitManager.RootNode, ref currentX, mainY);
@@ -253,7 +303,7 @@ namespace FireAlarmCircuitAnalysis.Views
                 // Position any branches from this device
                 if (child.Children.Any(c => c.IsBranchDevice))
                 {
-                    PositionBranchDevices(child, currentX, mainY + _branchVerticalSpacing * _scale);
+                    PositionBranchDevices(child, device.X, mainY + _branchVerticalSpacing * _scale);
                 }
                 
                 currentX += _minDeviceSpacing * _scale;
@@ -268,7 +318,16 @@ namespace FireAlarmCircuitAnalysis.Views
             var branches = tapNode.Children.Where(c => c.IsBranchDevice).ToList();
             if (!branches.Any()) return;
             
-            double branchX = tapX;
+            // Calculate total branch width to center branches under tap
+            int totalBranchDevices = 0;
+            foreach (var branch in branches)
+            {
+                totalBranchDevices += CountBranchDevices(branch) + 1;
+            }
+            
+            double totalBranchWidth = totalBranchDevices * _minDeviceSpacing * _scale;
+            double startX = tapX - (totalBranchWidth / 2);
+            double branchX = startX;
             
             foreach (var branch in branches)
             {
@@ -282,12 +341,23 @@ namespace FireAlarmCircuitAnalysis.Views
                 };
                 _deviceMap[branch] = device;
                 
-                // Position subsequent devices in branch
-                double nextX = branchX + (_minDeviceSpacing * _scale * 0.8); // Slightly closer spacing for branches
+                // Position subsequent devices in branch with full spacing
+                double nextX = branchX + (_minDeviceSpacing * _scale);
                 PositionBranchChain(branch, ref nextX, branchY);
                 
-                branchX = nextX + (_minDeviceSpacing * _scale * 0.5); // Space between branches
+                branchX = nextX + (_minDeviceSpacing * _scale * 0.3); // Small gap between branches
             }
+        }
+        
+        private int CountBranchDevices(CircuitNode node)
+        {
+            int count = 0;
+            foreach (var child in node.Children)
+            {
+                count++;
+                count += CountBranchDevices(child);
+            }
+            return count;
         }
 
         private void PositionBranchChain(CircuitNode node, ref double currentX, double y)
@@ -303,7 +373,7 @@ namespace FireAlarmCircuitAnalysis.Views
                 };
                 _deviceMap[child] = device;
                 
-                currentX += _minDeviceSpacing * _scale * 0.8;
+                currentX += _minDeviceSpacing * _scale;
                 PositionBranchChain(child, ref currentX, y);
             }
         }
@@ -464,9 +534,9 @@ namespace FireAlarmCircuitAnalysis.Views
                 Height = height * _scale,
                 Fill = PanelColor,
                 Stroke = DeviceBorderColor,
-                StrokeThickness = 3 * _scale,
-                RadiusX = 5 * _scale,
-                RadiusY = 5 * _scale
+                StrokeThickness = 2 * _scale,
+                RadiusX = 4 * _scale,
+                RadiusY = 4 * _scale
             };
             Canvas.SetLeft(rect, x - (width * _scale / 2));
             Canvas.SetTop(rect, y - (height * _scale / 2));
@@ -477,12 +547,12 @@ namespace FireAlarmCircuitAnalysis.Views
             {
                 Text = "FACP",
                 Foreground = new SolidColorBrush(Colors.White),
-                FontSize = 12 * _scale,
+                FontSize = 10 * _scale,
                 FontWeight = FontWeights.Bold,
                 TextAlignment = TextAlignment.Center
             };
-            Canvas.SetLeft(text, x - (25 * _scale));
-            Canvas.SetTop(text, y - (8 * _scale));
+            Canvas.SetLeft(text, x - (20 * _scale));
+            Canvas.SetTop(text, y - (6 * _scale));
             _canvas.Children.Add(text);
         }
 
@@ -495,9 +565,9 @@ namespace FireAlarmCircuitAnalysis.Views
                 Height = height * _scale,
                 Fill = DeviceColor,
                 Stroke = DeviceBorderColor,
-                StrokeThickness = 2 * _scale,
-                RadiusX = 3 * _scale,
-                RadiusY = 3 * _scale
+                StrokeThickness = 1.5 * _scale,
+                RadiusX = 2 * _scale,
+                RadiusY = 2 * _scale
             };
             Canvas.SetLeft(rect, x - (width * _scale / 2));
             Canvas.SetTop(rect, y - (height * _scale / 2));
@@ -508,15 +578,15 @@ namespace FireAlarmCircuitAnalysis.Views
             {
                 Text = abbreviation,
                 Foreground = new SolidColorBrush(Colors.White),
-                FontSize = 11 * _scale,
+                FontSize = 9 * _scale,
                 FontWeight = FontWeights.Bold,
                 TextAlignment = TextAlignment.Center
             };
             
             // Center the text
-            var textWidth = abbreviation.Length * 8 * _scale; // Approximate text width
+            var textWidth = abbreviation.Length * 6 * _scale; // Approximate text width
             Canvas.SetLeft(text, x - (textWidth / 2));
-            Canvas.SetTop(text, y - (7 * _scale));
+            Canvas.SetTop(text, y - (5 * _scale));
             _canvas.Children.Add(text);
         }
 
@@ -530,12 +600,13 @@ namespace FireAlarmCircuitAnalysis.Views
             {
                 Text = $"{voltage:F1}V",
                 Foreground = color,
-                FontSize = 10 * _scale,
+                FontSize = 8 * _scale,
                 FontWeight = FontWeights.Bold,
-                Background = new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)) // Semi-transparent white background
+                Background = new SolidColorBrush(Color.FromArgb(230, 255, 255, 255)),
+                Padding = new Thickness(2, 1, 2, 1)
             };
-            Canvas.SetLeft(voltageText, device.X - (15 * _scale));
-            Canvas.SetTop(voltageText, device.Y - (DeviceBoxHeight / 2 * _scale) - (18 * _scale));
+            Canvas.SetLeft(voltageText, device.X - (12 * _scale));
+            Canvas.SetTop(voltageText, device.Y - (DeviceBoxHeight / 2 * _scale) - (15 * _scale));
             _canvas.Children.Add(voltageText);
         }
 
@@ -544,17 +615,30 @@ namespace FireAlarmCircuitAnalysis.Views
             double midX = (from.X + to.X) / 2;
             double midY = (from.Y + to.Y) / 2;
             
+            // Adjust position for vertical connections
+            bool isVertical = Math.Abs(from.Y - to.Y) > Math.Abs(from.X - to.X);
+            
             var distanceText = new TextBlock
             {
                 Text = $"{distance:F0}'",
-                Foreground = TextColor,
-                FontSize = 9 * _scale,
+                Foreground = new SolidColorBrush(Color.FromRgb(80, 80, 80)),
+                FontSize = 8 * _scale,
                 FontWeight = FontWeights.Normal,
-                Background = new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)), // Semi-transparent background
-                Padding = new Thickness(2)
+                Background = new SolidColorBrush(Color.FromArgb(240, 255, 255, 255)),
+                Padding = new Thickness(2, 1, 2, 1)
             };
-            Canvas.SetLeft(distanceText, midX - (12 * _scale));
-            Canvas.SetTop(distanceText, midY - (20 * _scale));
+            
+            if (isVertical)
+            {
+                Canvas.SetLeft(distanceText, midX + (5 * _scale));
+                Canvas.SetTop(distanceText, midY - (10 * _scale));
+            }
+            else
+            {
+                Canvas.SetLeft(distanceText, midX - (10 * _scale));
+                Canvas.SetTop(distanceText, midY - (15 * _scale));
+            }
+            
             _canvas.Children.Add(distanceText);
         }
 
@@ -570,15 +654,14 @@ namespace FireAlarmCircuitAnalysis.Views
                     // Device name label - positioned below device box
                     var nameText = new TextBlock
                     {
-                        Text = TruncateName(node.Name, 12),
-                        FontSize = 9 * _scale,
+                        Text = TruncateName(node.Name, 15),
+                        FontSize = 8 * _scale,
                         FontWeight = FontWeights.Normal,
                         Foreground = TextColor,
-                        TextAlignment = TextAlignment.Center,
-                        Background = new SolidColorBrush(Color.FromArgb(240, 255, 255, 255))
+                        TextAlignment = TextAlignment.Center
                     };
-                    Canvas.SetLeft(nameText, device.X - (40 * _scale));
-                    Canvas.SetTop(nameText, device.Y + (DeviceBoxHeight / 2 * _scale) + (8 * _scale));
+                    Canvas.SetLeft(nameText, device.X - (35 * _scale));
+                    Canvas.SetTop(nameText, device.Y + (DeviceBoxHeight / 2 * _scale) + (5 * _scale));
                     _canvas.Children.Add(nameText);
                     
                     // Current consumption label - smaller, positioned below name
@@ -586,11 +669,11 @@ namespace FireAlarmCircuitAnalysis.Views
                     {
                         Text = $"{node.DeviceData.Current.Alarm:F2}A",
                         FontSize = 7 * _scale,
-                        Foreground = new SolidColorBrush(Color.FromRgb(105, 105, 105)), // Dim gray
+                        Foreground = new SolidColorBrush(Color.FromRgb(128, 128, 128)),
                         TextAlignment = TextAlignment.Center
                     };
-                    Canvas.SetLeft(currentText, device.X - (15 * _scale));
-                    Canvas.SetTop(currentText, device.Y + (DeviceBoxHeight / 2 * _scale) + (25 * _scale));
+                    Canvas.SetLeft(currentText, device.X - (12 * _scale));
+                    Canvas.SetTop(currentText, device.Y + (DeviceBoxHeight / 2 * _scale) + (20 * _scale));
                     _canvas.Children.Add(currentText);
                 }
                 else if (device.IsPanel)
@@ -599,13 +682,13 @@ namespace FireAlarmCircuitAnalysis.Views
                     var panelText = new TextBlock
                     {
                         Text = "FIRE ALARM CONTROL PANEL",
-                        FontSize = 10 * _scale,
+                        FontSize = 9 * _scale,
                         FontWeight = FontWeights.Bold,
                         Foreground = TextColor,
                         TextAlignment = TextAlignment.Center
                     };
-                    Canvas.SetLeft(panelText, device.X - (80 * _scale));
-                    Canvas.SetTop(panelText, device.Y + (DeviceBoxHeight / 2 * _scale) + (10 * _scale));
+                    Canvas.SetLeft(panelText, device.X - (70 * _scale));
+                    Canvas.SetTop(panelText, device.Y + (DeviceBoxHeight / 2 * _scale) + (8 * _scale));
                     _canvas.Children.Add(panelText);
                 }
             }
@@ -679,6 +762,897 @@ namespace FireAlarmCircuitAnalysis.Views
             DrawSchematic();
         }
 
+        // FQQ Circuit Drawing Methods
+        
+        private LayoutInfo CalculateFQQLayout()
+        {
+            var info = new LayoutInfo();
+            
+            // Count all devices for FQQ horizontal layout
+            int totalDevices = CountAllDevices(_circuitManager.RootNode);
+            int maxBranches = GetMaxBranchDepth(_circuitManager.RootNode);
+            
+            // FQQ uses wider spacing for better readability
+            info.TotalWidth = Math.Max(1400, (totalDevices + 3) * 120 * _scale);
+            info.TotalHeight = 300 + (maxBranches * 100 * _scale); // Extra height for branches
+            
+            return info;
+        }
+        
+        private void DrawFQQHeader()
+        {
+            // Circuit title box
+            var titleBox = new Rectangle
+            {
+                Width = _canvas.Width - (2 * _margin),
+                Height = 60 * _scale,
+                Fill = new SolidColorBrush(Color.FromRgb(240, 240, 240)),
+                Stroke = Brushes.Black,
+                StrokeThickness = 2
+            };
+            Canvas.SetLeft(titleBox, _margin);
+            Canvas.SetTop(titleBox, 10);
+            _canvas.Children.Add(titleBox);
+            
+            // Circuit title
+            var titleText = new TextBlock
+            {
+                Text = "CIRCUIT 7 - THIRD FLOOR",
+                FontSize = 16 * _scale,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            Canvas.SetLeft(titleText, _canvas.Width / 2 - 100);
+            Canvas.SetTop(titleText, 20);
+            _canvas.Children.Add(titleText);
+            
+            // Circuit info
+            var infoText = new TextBlock
+            {
+                Text = $"Class B - {_circuitManager.Parameters.SystemVoltage:F1} VDC",
+                FontSize = 12 * _scale,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            Canvas.SetLeft(infoText, _canvas.Width / 2 - 80);
+            Canvas.SetTop(infoText, 45);
+            _canvas.Children.Add(infoText);
+        }
+        
+        private void PositionFQQDevices(LayoutInfo layout)
+        {
+            double mainY = 120 * _scale;
+            double startX = _margin + 80;
+            double currentX = startX;
+            int deviceNum = 1;
+            
+            // Position START indicator
+            AddFQQStartIndicator(startX - 50, mainY);
+            
+            // Position all devices horizontally
+            PositionFQQDevicesRecursive(_circuitManager.RootNode, ref currentX, mainY, ref deviceNum, 0);
+            
+            // Position EOL indicator
+            AddFQQEOLIndicator(currentX + 50, mainY);
+        }
+        
+        private void PositionFQQDevicesRecursive(CircuitNode node, ref double currentX, double y, ref int deviceNum, int level)
+        {
+            foreach (var child in node.Children.Where(c => !c.IsBranchDevice))
+            {
+                if (child.NodeType == "Device" && child.DeviceData != null)
+                {
+                    var device = new SchematicDevice
+                    {
+                        Node = child,
+                        X = currentX,
+                        Y = y,
+                        DeviceAddress = $"{deviceNum:D3}",
+                        IsMainCircuit = true
+                    };
+                    _deviceMap[child] = device;
+                    
+                    currentX += 120 * _scale;
+                    deviceNum++;
+                    
+                    // Position branches below this device
+                    var branches = child.Children.Where(c => c.IsBranchDevice).ToList();
+                    if (branches.Any())
+                    {
+                        double branchY = y + 80 * _scale;
+                        foreach (var branch in branches)
+                        {
+                            var branchDevice = new SchematicDevice
+                            {
+                                Node = branch,
+                                X = device.X,
+                                Y = branchY,
+                                DeviceAddress = $"{deviceNum:D3}",
+                                IsBranch = true,
+                                TapNode = child
+                            };
+                            _deviceMap[branch] = branchDevice;
+                            branchY += 60 * _scale;
+                            deviceNum++;
+                        }
+                    }
+                }
+                
+                PositionFQQDevicesRecursive(child, ref currentX, y, ref deviceNum, level + 1);
+            }
+        }
+        
+        private void DrawFQQMainLine()
+        {
+            double mainY = 120 * _scale;
+            double startX = _margin + 30;
+            
+            // Get rightmost device position
+            double endX = _deviceMap.Values.Where(d => d.IsMainCircuit).Max(d => d.X) + 70;
+            
+            // Draw main horizontal line
+            var mainLine = new Line
+            {
+                X1 = startX,
+                Y1 = mainY,
+                X2 = endX,
+                Y2 = mainY,
+                Stroke = GetVoltageColor(_circuitManager.Parameters.SystemVoltage),
+                StrokeThickness = 3 * _scale
+            };
+            _canvas.Children.Add(mainLine);
+            
+            // Add wire segments between devices
+            var mainDevices = _deviceMap.Values.Where(d => d.IsMainCircuit).OrderBy(d => d.X).ToList();
+            for (int i = 0; i < mainDevices.Count - 1; i++)
+            {
+                var from = mainDevices[i];
+                var to = mainDevices[i + 1];
+                
+                // Add distance annotation
+                var distanceText = new TextBlock
+                {
+                    Text = $"{to.Node.DistanceFromParent}ft",
+                    FontSize = 8 * _scale,
+                    Foreground = Brushes.Blue
+                };
+                Canvas.SetLeft(distanceText, (from.X + to.X) / 2 - 10);
+                Canvas.SetTop(distanceText, mainY - 20);
+                _canvas.Children.Add(distanceText);
+            }
+        }
+        
+        private void DrawFQQDevices()
+        {
+            foreach (var kvp in _deviceMap)
+            {
+                var device = kvp.Value;
+                var node = device.Node;
+                
+                if (node.DeviceData != null)
+                {
+                    // Draw FQQ-style device icon
+                    DrawFQQDeviceIcon(device, node);
+                    
+                    // Draw connection line to main circuit
+                    if (!device.IsMainCircuit)
+                    {
+                        var tapDevice = _deviceMap[device.TapNode];
+                        DrawFQQTapConnection(tapDevice, device);
+                    }
+                }
+            }
+        }
+        
+        private void DrawFQQDeviceIcon(SchematicDevice device, CircuitNode node)
+        {
+            string deviceType = GetFQQDeviceType(node);
+            
+            switch (deviceType)
+            {
+                case "Wall Horn":
+                    DrawFQQHornIcon(device.X, device.Y, false);
+                    break;
+                case "Wall Horn Strobe":
+                    DrawFQQHornStrobeIcon(device.X, device.Y);
+                    break;
+                case "Wall Strobe":
+                    DrawFQQStrobeIcon(device.X, device.Y);
+                    break;
+                case "Ceiling Speaker":
+                    DrawFQQSpeakerIcon(device.X, device.Y);
+                    break;
+                default:
+                    DrawFQQGenericIcon(device.X, device.Y);
+                    break;
+            }
+        }
+        
+        private void DrawFQQHornIcon(double x, double y, bool withStrobe)
+        {
+            // Horn symbol - triangle pointing right
+            var horn = new Polygon
+            {
+                Points = new PointCollection
+                {
+                    new Point(x - 15 * _scale, y - 10 * _scale),
+                    new Point(x + 15 * _scale, y),
+                    new Point(x - 15 * _scale, y + 10 * _scale)
+                },
+                Fill = Brushes.Black,
+                Stroke = Brushes.Black,
+                StrokeThickness = 2 * _scale
+            };
+            _canvas.Children.Add(horn);
+            
+            // Horn text
+            var hornText = new TextBlock
+            {
+                Text = "▸",
+                FontSize = 14 * _scale,
+                FontWeight = FontWeights.Bold
+            };
+            Canvas.SetLeft(hornText, x - 8 * _scale);
+            Canvas.SetTop(hornText, y - 10 * _scale);
+            _canvas.Children.Add(hornText);
+        }
+        
+        private void DrawFQQHornStrobeIcon(double x, double y)
+        {
+            // Horn part
+            DrawFQQHornIcon(x - 10 * _scale, y, false);
+            
+            // Strobe circle
+            var strobe = new Ellipse
+            {
+                Width = 12 * _scale,
+                Height = 12 * _scale,
+                Fill = Brushes.Yellow,
+                Stroke = Brushes.Black,
+                StrokeThickness = 1 * _scale
+            };
+            Canvas.SetLeft(strobe, x + 5 * _scale);
+            Canvas.SetTop(strobe, y - 6 * _scale);
+            _canvas.Children.Add(strobe);
+            
+            // Combined symbol
+            var comboText = new TextBlock
+            {
+                Text = "▸◉",
+                FontSize = 12 * _scale,
+                FontWeight = FontWeights.Bold
+            };
+            Canvas.SetLeft(comboText, x - 12 * _scale);
+            Canvas.SetTop(comboText, y - 8 * _scale);
+            _canvas.Children.Add(comboText);
+        }
+        
+        private void DrawFQQStrobeIcon(double x, double y)
+        {
+            // Strobe circle with flash lines
+            var strobe = new Ellipse
+            {
+                Width = 20 * _scale,
+                Height = 20 * _scale,
+                Fill = Brushes.Yellow,
+                Stroke = Brushes.Black,
+                StrokeThickness = 2 * _scale
+            };
+            Canvas.SetLeft(strobe, x - 10 * _scale);
+            Canvas.SetTop(strobe, y - 10 * _scale);
+            _canvas.Children.Add(strobe);
+            
+            var strobeText = new TextBlock
+            {
+                Text = "◉",
+                FontSize = 16 * _scale,
+                FontWeight = FontWeights.Bold
+            };
+            Canvas.SetLeft(strobeText, x - 8 * _scale);
+            Canvas.SetTop(strobeText, y - 10 * _scale);
+            _canvas.Children.Add(strobeText);
+        }
+        
+        private void DrawFQQSpeakerIcon(double x, double y)
+        {
+            // Speaker cone shape
+            var speaker = new Rectangle
+            {
+                Width = 16 * _scale,
+                Height = 16 * _scale,
+                Fill = new SolidColorBrush(Color.FromRgb(200, 200, 255)),
+                Stroke = Brushes.Black,
+                StrokeThickness = 2 * _scale
+            };
+            Canvas.SetLeft(speaker, x - 8 * _scale);
+            Canvas.SetTop(speaker, y - 8 * _scale);
+            _canvas.Children.Add(speaker);
+            
+            var speakerText = new TextBlock
+            {
+                Text = "□",
+                FontSize = 14 * _scale,
+                FontWeight = FontWeights.Bold
+            };
+            Canvas.SetLeft(speakerText, x - 8 * _scale);
+            Canvas.SetTop(speakerText, y - 10 * _scale);
+            _canvas.Children.Add(speakerText);
+        }
+        
+        private void DrawFQQGenericIcon(double x, double y)
+        {
+            var generic = new Ellipse
+            {
+                Width = 16 * _scale,
+                Height = 16 * _scale,
+                Fill = Brushes.LightGray,
+                Stroke = Brushes.Black,
+                StrokeThickness = 2 * _scale
+            };
+            Canvas.SetLeft(generic, x - 8 * _scale);
+            Canvas.SetTop(generic, y - 8 * _scale);
+            _canvas.Children.Add(generic);
+        }
+        
+        private void DrawFQQBranches()
+        {
+            foreach (var device in _deviceMap.Values.Where(d => d.IsBranch))
+            {
+                var tapDevice = _deviceMap[device.TapNode];
+                DrawFQQTapConnection(tapDevice, device);
+            }
+        }
+        
+        private void DrawFQQTapConnection(SchematicDevice tapDevice, SchematicDevice branchDevice)
+        {
+            double mainY = 120 * _scale;
+            
+            // T-tap symbol
+            var tapSymbol = new TextBlock
+            {
+                Text = "T",
+                FontSize = 12 * _scale,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brushes.Blue
+            };
+            Canvas.SetLeft(tapSymbol, tapDevice.X - 5);
+            Canvas.SetTop(tapSymbol, mainY + 10);
+            _canvas.Children.Add(tapSymbol);
+            
+            // Vertical line down
+            var vertLine = new Line
+            {
+                X1 = tapDevice.X,
+                Y1 = mainY,
+                X2 = tapDevice.X,
+                Y2 = branchDevice.Y,
+                Stroke = GetVoltageColor(branchDevice.Node.Voltage),
+                StrokeThickness = 2 * _scale,
+                StrokeDashArray = new DoubleCollection { 5, 3 }
+            };
+            _canvas.Children.Add(vertLine);
+            
+            // Horizontal line to device
+            var horizLine = new Line
+            {
+                X1 = tapDevice.X,
+                Y1 = branchDevice.Y,
+                X2 = branchDevice.X,
+                Y2 = branchDevice.Y,
+                Stroke = GetVoltageColor(branchDevice.Node.Voltage),
+                StrokeThickness = 2 * _scale,
+                StrokeDashArray = new DoubleCollection { 5, 3 }
+            };
+            _canvas.Children.Add(horizLine);
+        }
+        
+        private void AddFQQAnnotations()
+        {
+            foreach (var kvp in _deviceMap)
+            {
+                var device = kvp.Value;
+                var node = device.Node;
+                
+                if (node.DeviceData != null)
+                {
+                    // Device label above icon
+                    var label = GetFQQDeviceLabel(node);
+                    var labelText = new TextBlock
+                    {
+                        Text = $"{label.Split(' ')[0]}-{device.DeviceAddress}",
+                        FontSize = 10 * _scale,
+                        FontWeight = FontWeights.Bold,
+                        TextAlignment = TextAlignment.Center
+                    };
+                    Canvas.SetLeft(labelText, device.X - 20);
+                    Canvas.SetTop(labelText, device.Y - 35);
+                    _canvas.Children.Add(labelText);
+                    
+                    // Address in brackets
+                    var addressText = new TextBlock
+                    {
+                        Text = $"[{device.DeviceAddress}]",
+                        FontSize = 9 * _scale,
+                        TextAlignment = TextAlignment.Center
+                    };
+                    Canvas.SetLeft(addressText, device.X - 15);
+                    Canvas.SetTop(addressText, device.Y + 20);
+                    _canvas.Children.Add(addressText);
+                    
+                    // Current and voltage
+                    var currentText = new TextBlock
+                    {
+                        Text = $"{node.DeviceData.Current.Alarm * 1000:F0}mA",
+                        FontSize = 8 * _scale,
+                        Foreground = Brushes.DarkGreen
+                    };
+                    Canvas.SetLeft(currentText, device.X - 18);
+                    Canvas.SetTop(currentText, device.Y + 35);
+                    _canvas.Children.Add(currentText);
+                    
+                    var voltageText = new TextBlock
+                    {
+                        Text = $"{node.Voltage:F1}V",
+                        FontSize = 8 * _scale,
+                        Foreground = GetVoltageColor(node.Voltage)
+                    };
+                    Canvas.SetLeft(voltageText, device.X - 12);
+                    Canvas.SetTop(voltageText, device.Y + 50);
+                    _canvas.Children.Add(voltageText);
+                }
+            }
+        }
+        
+        private void DrawFQQSummaryBox()
+        {
+            double boxX = _canvas.Width - 300;
+            double boxY = _canvas.Height - 150;
+            
+            // Summary box
+            var summaryBox = new Rectangle
+            {
+                Width = 280,
+                Height = 120,
+                Fill = new SolidColorBrush(Color.FromRgb(245, 245, 245)),
+                Stroke = Brushes.Black,
+                StrokeThickness = 2
+            };
+            Canvas.SetLeft(summaryBox, boxX);
+            Canvas.SetTop(summaryBox, boxY);
+            _canvas.Children.Add(summaryBox);
+            
+            // Summary title
+            var titleText = new TextBlock
+            {
+                Text = "Circuit Statistics",
+                FontSize = 12 * _scale,
+                FontWeight = FontWeights.Bold
+            };
+            Canvas.SetLeft(titleText, boxX + 10);
+            Canvas.SetTop(titleText, boxY + 5);
+            _canvas.Children.Add(titleText);
+            
+            // Statistics
+            int deviceCount = _deviceMap.Count;
+            double totalCurrent = _deviceMap.Values.Sum(d => d.Node.DeviceData?.Current.Alarm ?? 0);
+            double totalWire = _deviceMap.Values.Sum(d => d.Node.DistanceFromParent);
+            double minVoltage = _deviceMap.Values.Min(d => d.Node.Voltage);
+            
+            var statsText = new TextBlock
+            {
+                Text = $"Total Devices: {deviceCount}\n" +
+                       $"Total Current: {totalCurrent:F2}A\n" +
+                       $"Total Wire: {totalWire:F0} ft\n" +
+                       $"Min Voltage: {minVoltage:F1}V\n" +
+                       $"Status: {(minVoltage >= _circuitManager.Parameters.MinVoltage ? "✓ Circuit Valid" : "✗ Voltage Error")}",
+                FontSize = 10 * _scale,
+                LineHeight = 18
+            };
+            Canvas.SetLeft(statsText, boxX + 10);
+            Canvas.SetTop(statsText, boxY + 25);
+            _canvas.Children.Add(statsText);
+        }
+        
+        private void DrawFQQLegend()
+        {
+            double legendX = 50;
+            double legendY = _canvas.Height - 150;
+            
+            // Legend box
+            var legendBox = new Rectangle
+            {
+                Width = 200,
+                Height = 120,
+                Fill = new SolidColorBrush(Color.FromRgb(250, 250, 250)),
+                Stroke = Brushes.Black,
+                StrokeThickness = 1
+            };
+            Canvas.SetLeft(legendBox, legendX);
+            Canvas.SetTop(legendBox, legendY);
+            _canvas.Children.Add(legendBox);
+            
+            // Legend title
+            var legendTitle = new TextBlock
+            {
+                Text = "Legend:",
+                FontSize = 12 * _scale,
+                FontWeight = FontWeights.Bold
+            };
+            Canvas.SetLeft(legendTitle, legendX + 5);
+            Canvas.SetTop(legendTitle, legendY + 5);
+            _canvas.Children.Add(legendTitle);
+            
+            // Legend items
+            var legendText = new TextBlock
+            {
+                Text = "▸ = Horn\n◉ = Strobe\n□ = Speaker\nT = T-Tap\n■ = End-of-Line\n\nWire Colors:\nGreen = Good (>20V)\nYellow = Marginal\nRed = Low (<16V)",
+                FontSize = 9 * _scale,
+                LineHeight = 14
+            };
+            Canvas.SetLeft(legendText, legendX + 5);
+            Canvas.SetTop(legendText, legendY + 25);
+            _canvas.Children.Add(legendText);
+        }
+        
+        private void AddFQQStartIndicator(double x, double y)
+        {
+            var startText = new TextBlock
+            {
+                Text = "START",
+                FontSize = 10 * _scale,
+                FontWeight = FontWeights.Bold
+            };
+            Canvas.SetLeft(startText, x);
+            Canvas.SetTop(startText, y - 20);
+            _canvas.Children.Add(startText);
+            
+            var startSymbol = new Ellipse
+            {
+                Width = 8,
+                Height = 8,
+                Fill = Brushes.Black
+            };
+            Canvas.SetLeft(startSymbol, x + 15);
+            Canvas.SetTop(startSymbol, y - 4);
+            _canvas.Children.Add(startSymbol);
+        }
+        
+        private void AddFQQEOLIndicator(double x, double y)
+        {
+            var eolText = new TextBlock
+            {
+                Text = "EOL",
+                FontSize = 10 * _scale,
+                FontWeight = FontWeights.Bold
+            };
+            Canvas.SetLeft(eolText, x);
+            Canvas.SetTop(eolText, y - 20);
+            _canvas.Children.Add(eolText);
+            
+            var eolSymbol = new Rectangle
+            {
+                Width = 8,
+                Height = 8,
+                Fill = Brushes.Black
+            };
+            Canvas.SetLeft(eolSymbol, x + 10);
+            Canvas.SetTop(eolSymbol, y - 4);
+            _canvas.Children.Add(eolSymbol);
+        }
+        
+        private Brush GetVoltageColor(double voltage)
+        {
+            if (voltage >= 20.0)
+                return Brushes.Green;
+            else if (voltage >= _circuitManager.Parameters.MinVoltage)
+                return Brushes.Orange;
+            else
+                return Brushes.Red;
+        }
+        
+        private string GetFQQDeviceLabel(CircuitNode node)
+        {
+            string name = node.Name?.ToUpper() ?? "";
+            
+            if (name.Contains("CEILING") && name.Contains("SPEAKER"))
+                return "Ceiling Speaker Strobe";
+            else if (name.Contains("WALL") && name.Contains("SPEAKER"))
+                return "Wall Speaker";
+            else if (name.Contains("STROBE"))
+                return "Wall Speaker Strobe";
+            else
+                return node.Name ?? "Fire Alarm Device";
+        }
+        
+        private string GetFQQDeviceType(CircuitNode node)
+        {
+            string name = node.Name?.ToUpper() ?? "";
+            string type = node.DeviceData?.DeviceType?.ToUpper() ?? "";
+            
+            if (name.Contains("SPEAKER") && name.Contains("STROBE"))
+                return "Wall Horn Strobe";
+            else if (name.Contains("SPEAKER"))
+                return "Ceiling Speaker";
+            else if (name.Contains("STROBE"))
+                return "Wall Strobe";
+            else if (name.Contains("HORN") && name.Contains("STROBE"))
+                return "Wall Horn Strobe";
+            else if (name.Contains("HORN"))
+                return "Wall Horn";
+            else if (name.Contains("SMOKE"))
+                return "Smoke Detector";
+            else if (name.Contains("HEAT"))
+                return "Heat Detector";
+            else if (name.Contains("PULL"))
+                return "Pull Station";
+            else
+                return "NAC Device";
+        }
+
+        // IDNAC Drawing Methods (keeping for compatibility)
+        
+        private void DrawIDNACTitle()
+        {
+            // Title block
+            var titleText = new TextBlock
+            {
+                Text = "IDNAC CIRCUIT DIAGRAM",
+                FontSize = 20 * _scale,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Colors.Black)
+            };
+            Canvas.SetLeft(titleText, _margin);
+            Canvas.SetTop(titleText, 20);
+            _canvas.Children.Add(titleText);
+            
+            // Circuit info
+            var infoY = 50;
+            var info1 = new TextBlock
+            {
+                Text = $"Panel: FACP | Circuit: NAC-1 | Voltage: {_circuitManager.Parameters.SystemVoltage}V",
+                FontSize = 12 * _scale,
+                Foreground = new SolidColorBrush(Colors.DarkGray)
+            };
+            Canvas.SetLeft(info1, _margin);
+            Canvas.SetTop(info1, infoY);
+            _canvas.Children.Add(info1);
+            
+            var info2 = new TextBlock
+            {
+                Text = $"Wire: {_circuitManager.Parameters.WireGauge} | Date: {DateTime.Now:yyyy-MM-dd}",
+                FontSize = 12 * _scale,
+                Foreground = new SolidColorBrush(Colors.DarkGray)
+            };
+            Canvas.SetLeft(info2, _margin);
+            Canvas.SetTop(info2, infoY + 20);
+            _canvas.Children.Add(info2);
+        }
+        
+        private void PositionIDNACDevices(LayoutInfo layout)
+        {
+            double startY = 150 * _scale;
+            double currentX = _margin + 100;
+            int deviceNum = 1;
+            
+            // Position FACP
+            var panelDevice = new SchematicDevice
+            {
+                Node = _circuitManager.RootNode,
+                X = _margin + 50,
+                Y = startY,
+                IsPanel = true,
+                DeviceAddress = "FACP"
+            };
+            _deviceMap[_circuitManager.RootNode] = panelDevice;
+            
+            // Position all devices linearly with addresses
+            PositionIDNACDevicesRecursive(_circuitManager.RootNode, ref currentX, startY, ref deviceNum);
+        }
+        
+        private void PositionIDNACDevicesRecursive(CircuitNode node, ref double currentX, double y, ref int deviceNum)
+        {
+            foreach (var child in node.Children)
+            {
+                if (child.NodeType == "Device" && child.DeviceData != null)
+                {
+                    var device = new SchematicDevice
+                    {
+                        Node = child,
+                        X = currentX,
+                        Y = y + (child.IsBranchDevice ? 80 * _scale : 0),
+                        IsBranch = child.IsBranchDevice,
+                        DeviceAddress = $"NAC-{deviceNum:D3}"
+                    };
+                    _deviceMap[child] = device;
+                    
+                    currentX += 120 * _scale;
+                    deviceNum++;
+                }
+                
+                PositionIDNACDevicesRecursive(child, ref currentX, y, ref deviceNum);
+            }
+        }
+        
+        private void DrawIDNACConnections()
+        {
+            // Draw main circuit line
+            var mainY = 150 * _scale;
+            var firstDevice = _deviceMap.Values.FirstOrDefault(d => !d.IsPanel);
+            var lastDevice = _deviceMap.Values.Where(d => !d.IsPanel && !d.IsBranch).LastOrDefault();
+            
+            if (firstDevice != null && lastDevice != null)
+            {
+                var mainLine = new Line
+                {
+                    X1 = _margin + 100,
+                    Y1 = mainY,
+                    X2 = lastDevice.X + 50,
+                    Y2 = mainY,
+                    Stroke = new SolidColorBrush(Colors.Black),
+                    StrokeThickness = 2 * _scale
+                };
+                _canvas.Children.Add(mainLine);
+            }
+            
+            // Draw device connections
+            foreach (var kvp in _deviceMap)
+            {
+                var device = kvp.Value;
+                if (!device.IsPanel)
+                {
+                    // Drop line to device
+                    var dropLine = new Line
+                    {
+                        X1 = device.X,
+                        Y1 = mainY,
+                        X2 = device.X,
+                        Y2 = device.Y,
+                        Stroke = device.IsBranch ? BranchWireColor : new SolidColorBrush(Colors.Black),
+                        StrokeThickness = 1.5 * _scale
+                    };
+                    _canvas.Children.Add(dropLine);
+                    
+                    // Add wire length annotation
+                    if (device.Node.Parent != null)
+                    {
+                        var lengthText = new TextBlock
+                        {
+                            Text = $"{device.Node.DistanceFromParent}'",
+                            FontSize = 8 * _scale,
+                            Foreground = new SolidColorBrush(Colors.Gray)
+                        };
+                        Canvas.SetLeft(lengthText, device.X + 5);
+                        Canvas.SetTop(lengthText, mainY + 5);
+                        _canvas.Children.Add(lengthText);
+                    }
+                }
+            }
+        }
+        
+        private void DrawIDNACDevices()
+        {
+            foreach (var kvp in _deviceMap)
+            {
+                var device = kvp.Value;
+                var node = device.Node;
+                
+                if (device.IsPanel)
+                {
+                    // Draw FACP box
+                    var panel = new Rectangle
+                    {
+                        Width = 80 * _scale,
+                        Height = 60 * _scale,
+                        Fill = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+                        Stroke = new SolidColorBrush(Colors.Black),
+                        StrokeThickness = 2 * _scale
+                    };
+                    Canvas.SetLeft(panel, device.X - 40 * _scale);
+                    Canvas.SetTop(panel, device.Y - 30 * _scale);
+                    _canvas.Children.Add(panel);
+                    
+                    var panelText = new TextBlock
+                    {
+                        Text = "FACP",
+                        FontSize = 14 * _scale,
+                        FontWeight = FontWeights.Bold
+                    };
+                    Canvas.SetLeft(panelText, device.X - 20 * _scale);
+                    Canvas.SetTop(panelText, device.Y - 10 * _scale);
+                    _canvas.Children.Add(panelText);
+                }
+                else if (node.DeviceData != null)
+                {
+                    // Draw device symbol - simple circle for IDNAC style
+                    var deviceCircle = new Ellipse
+                    {
+                        Width = 40 * _scale,
+                        Height = 40 * _scale,
+                        Fill = device.IsBranch ? 
+                            new SolidColorBrush(Color.FromRgb(255, 200, 150)) : 
+                            new SolidColorBrush(Color.FromRgb(200, 200, 255)),
+                        Stroke = new SolidColorBrush(Colors.Black),
+                        StrokeThickness = 2 * _scale
+                    };
+                    Canvas.SetLeft(deviceCircle, device.X - 20 * _scale);
+                    Canvas.SetTop(deviceCircle, device.Y - 20 * _scale);
+                    _canvas.Children.Add(deviceCircle);
+                    
+                    // Device type in circle
+                    var typeText = new TextBlock
+                    {
+                        Text = GetDeviceAbbreviation(node),
+                        FontSize = 10 * _scale,
+                        FontWeight = FontWeights.Bold,
+                        TextAlignment = TextAlignment.Center
+                    };
+                    Canvas.SetLeft(typeText, device.X - 15 * _scale);
+                    Canvas.SetTop(typeText, device.Y - 7 * _scale);
+                    _canvas.Children.Add(typeText);
+                }
+            }
+        }
+        
+        private void AddIDNACLabels()
+        {
+            foreach (var kvp in _deviceMap)
+            {
+                var device = kvp.Value;
+                var node = device.Node;
+                
+                if (!device.IsPanel && node.DeviceData != null)
+                {
+                    // Device address above
+                    var addressText = new TextBlock
+                    {
+                        Text = device.DeviceAddress,
+                        FontSize = 10 * _scale,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = new SolidColorBrush(Colors.Black)
+                    };
+                    Canvas.SetLeft(addressText, device.X - 20 * _scale);
+                    Canvas.SetTop(addressText, device.Y - 40 * _scale);
+                    _canvas.Children.Add(addressText);
+                    
+                    // Device name below
+                    var nameText = new TextBlock
+                    {
+                        Text = TruncateName(node.Name, 20),
+                        FontSize = 8 * _scale,
+                        Foreground = new SolidColorBrush(Colors.DarkGray),
+                        TextAlignment = TextAlignment.Center
+                    };
+                    Canvas.SetLeft(nameText, device.X - 40 * _scale);
+                    Canvas.SetTop(nameText, device.Y + 25 * _scale);
+                    _canvas.Children.Add(nameText);
+                    
+                    // Current and voltage info
+                    var infoText = new TextBlock
+                    {
+                        Text = $"{node.DeviceData.Current.Alarm:F3}A | {node.Voltage:F1}V",
+                        FontSize = 7 * _scale,
+                        Foreground = node.Voltage >= _circuitManager.Parameters.MinVoltage ? 
+                            new SolidColorBrush(Colors.Green) : new SolidColorBrush(Colors.Red)
+                    };
+                    Canvas.SetLeft(infoText, device.X - 25 * _scale);
+                    Canvas.SetTop(infoText, device.Y + 40 * _scale);
+                    _canvas.Children.Add(infoText);
+                }
+            }
+        }
+        
+        private int CountAllDevices(CircuitNode node)
+        {
+            int count = 0;
+            if (node.NodeType == "Device") count = 1;
+            
+            foreach (var child in node.Children)
+            {
+                count += CountAllDevices(child);
+            }
+            
+            return count;
+        }
+
         // Helper classes
         private class SchematicDevice
         {
@@ -689,6 +1663,7 @@ namespace FireAlarmCircuitAnalysis.Views
             public bool IsMainCircuit { get; set; }
             public bool IsBranch { get; set; }
             public CircuitNode TapNode { get; set; }
+            public string DeviceAddress { get; set; }
         }
 
         private class LayoutInfo

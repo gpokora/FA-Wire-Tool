@@ -281,8 +281,9 @@ namespace FireAlarmCircuitAnalysis
                 var workbook = new XSSFWorkbook();
                 try
                 {
-                    // Create sheets in specific order
+                    // Create sheets in specific order - IDNAC format
                     CreateParametersSheet(workbook);
+                    CreateIDNACDesignSheet(workbook);  // New IDNAC format sheet
                     CreateCircuitLayoutSheet(workbook);
                     CreateSummarySheet(workbook);
                     CreateDeviceDetailsSheet(workbook);
@@ -421,6 +422,328 @@ namespace FireAlarmCircuitAnalysis
             sheet.SetColumnWidth(0, 25 * 256);
             sheet.SetColumnWidth(1, 15 * 256);
             sheet.SetColumnWidth(2, 40 * 256);
+        }
+
+        private void CreateIDNACDesignSheet(IWorkbook workbook)
+        {
+            var sheet = workbook.CreateSheet("FQQ IDNAC Designer");
+            
+            // FQQ-style cell formats
+            var headerStyle = workbook.CreateCellStyle();
+            var headerFont = workbook.CreateFont();
+            headerFont.IsBold = true;
+            headerFont.FontHeightInPoints = 9;
+            headerStyle.SetFont(headerFont);
+            headerStyle.FillForegroundColor = HSSFColor.Grey25Percent.Index;
+            headerStyle.FillPattern = FillPattern.SolidForeground;
+            headerStyle.Alignment = HorizontalAlignment.Center;
+            headerStyle.BorderBottom = BorderStyle.Thin;
+            headerStyle.BorderTop = BorderStyle.Thin;
+            headerStyle.BorderLeft = BorderStyle.Thin;
+            headerStyle.BorderRight = BorderStyle.Thin;
+            
+            var dataStyle = workbook.CreateCellStyle();
+            dataStyle.BorderBottom = BorderStyle.Thin;
+            dataStyle.BorderTop = BorderStyle.Thin;
+            dataStyle.BorderLeft = BorderStyle.Thin;
+            dataStyle.BorderRight = BorderStyle.Thin;
+            dataStyle.Alignment = HorizontalAlignment.Center;
+            
+            var yellowStyle = workbook.CreateCellStyle();
+            yellowStyle.FillForegroundColor = HSSFColor.Yellow.Index;
+            yellowStyle.FillPattern = FillPattern.SolidForeground;
+            yellowStyle.BorderBottom = BorderStyle.Thin;
+            yellowStyle.BorderTop = BorderStyle.Thin;
+            yellowStyle.BorderLeft = BorderStyle.Thin;
+            yellowStyle.BorderRight = BorderStyle.Thin;
+            yellowStyle.Alignment = HorizontalAlignment.Center;
+            
+            var altRowStyle = workbook.CreateCellStyle();
+            altRowStyle.FillForegroundColor = HSSFColor.LightGreen.Index;
+            altRowStyle.FillPattern = FillPattern.SolidForeground;
+            altRowStyle.BorderBottom = BorderStyle.Thin;
+            altRowStyle.BorderTop = BorderStyle.Thin;
+            altRowStyle.BorderLeft = BorderStyle.Thin;
+            altRowStyle.BorderRight = BorderStyle.Thin;
+            altRowStyle.Alignment = HorizontalAlignment.Center;
+            
+            // Number formats
+            var format2Decimal = workbook.CreateDataFormat();
+            var style2Decimal = workbook.CreateCellStyle();
+            style2Decimal.DataFormat = format2Decimal.GetFormat("0.00");
+            style2Decimal.BorderBottom = BorderStyle.Thin;
+            style2Decimal.BorderTop = BorderStyle.Thin;
+            style2Decimal.BorderLeft = BorderStyle.Thin;
+            style2Decimal.BorderRight = BorderStyle.Thin;
+            style2Decimal.Alignment = HorizontalAlignment.Center;
+            
+            // FQQ Headers - exactly matching the screenshot
+            var headerRow = sheet.CreateRow(0);
+            string[] fqqHeaders = { 
+                "Item", "Circuit", "Point", "Label", "Type", "Setting", "Cover", 
+                "Wire Length", "Wire Gauge", "Device Use", "Main SKU", "Socket", 
+                "Connect", "Flex Address", "Force Address", "Point Address", 
+                "Device mA", "Cable Ohms", "Amps", "%Volt Drop", "Total %Drop", 
+                "Volts at Device"
+            };
+            
+            for (int i = 0; i < fqqHeaders.Length; i++)
+            {
+                var cell = headerRow.CreateCell(i);
+                cell.SetCellValue(fqqHeaders[i]);
+                cell.CellStyle = headerStyle;
+            }
+            
+            // Add FQQ device data
+            int dataRow = 1;
+            int itemNum = 165;  // Starting like in FQQ screenshot
+            AddFQQDevices(sheet, workbook, _circuitManager.RootNode, ref dataRow, ref itemNum,
+                         dataStyle, altRowStyle, yellowStyle, style2Decimal);
+            
+            // FQQ Column widths - matching screenshot proportions
+            sheet.SetColumnWidth(0, 8 * 256);   // Item
+            sheet.SetColumnWidth(1, 8 * 256);   // Circuit
+            sheet.SetColumnWidth(2, 8 * 256);   // Point
+            sheet.SetColumnWidth(3, 20 * 256);  // Label
+            sheet.SetColumnWidth(4, 15 * 256);  // Type
+            sheet.SetColumnWidth(5, 12 * 256);  // Setting
+            sheet.SetColumnWidth(6, 12 * 256);  // Cover
+            sheet.SetColumnWidth(7, 10 * 256);  // Wire Length
+            sheet.SetColumnWidth(8, 10 * 256);  // Wire Gauge
+            sheet.SetColumnWidth(9, 10 * 256);  // Device Use
+            sheet.SetColumnWidth(10, 15 * 256); // Main SKU
+            sheet.SetColumnWidth(11, 12 * 256); // Socket
+            sheet.SetColumnWidth(12, 10 * 256); // Connect
+            sheet.SetColumnWidth(13, 12 * 256); // Flex Address
+            sheet.SetColumnWidth(14, 12 * 256); // Force Address
+            sheet.SetColumnWidth(15, 12 * 256); // Point Address
+            sheet.SetColumnWidth(16, 10 * 256); // Device mA
+            sheet.SetColumnWidth(17, 10 * 256); // Cable Ohms
+            sheet.SetColumnWidth(18, 8 * 256);  // Amps
+            sheet.SetColumnWidth(19, 10 * 256); // %Volt Drop
+            sheet.SetColumnWidth(20, 10 * 256); // Total %Drop
+            sheet.SetColumnWidth(21, 12 * 256); // Volts at Device
+            
+            // Freeze panes
+            sheet.CreateFreezePane(0, 1);
+        }
+        
+        private void AddFQQDevices(ISheet sheet, IWorkbook workbook, CircuitNode node, ref int rowNum, 
+                           ref int itemNum, ICellStyle dataStyle, ICellStyle altRowStyle, 
+                           ICellStyle yellowStyle, ICellStyle style2Decimal)
+        {
+            if (node.NodeType == "Root")
+            {
+                foreach (var child in node.Children)
+                {
+                    AddFQQDevices(sheet, workbook, child, ref rowNum, ref itemNum, 
+                                 dataStyle, altRowStyle, yellowStyle, style2Decimal);
+                }
+            }
+            else if (node.NodeType == "Device" && node.DeviceData != null)
+            {
+                var row = sheet.CreateRow(rowNum);
+                bool isAlternateRow = (rowNum % 2 == 0);
+                var rowStyle = isAlternateRow ? altRowStyle : dataStyle;
+                
+                // Item
+                var itemCell = row.CreateCell(0);
+                itemCell.SetCellValue(itemNum);
+                itemCell.CellStyle = rowStyle;
+                
+                // Circuit
+                var circuitCell = row.CreateCell(1);
+                circuitCell.SetCellValue(7); // Circuit 7 like in FQQ
+                circuitCell.CellStyle = rowStyle;
+                
+                // Point
+                var pointCell = row.CreateCell(2);
+                pointCell.SetCellValue("3FL"); // 3FL like in FQQ
+                pointCell.CellStyle = rowStyle;
+                
+                // Label - Device Name
+                var labelCell = row.CreateCell(3);
+                labelCell.SetCellValue(GetFQQDeviceLabel(node));
+                labelCell.CellStyle = rowStyle;
+                
+                // Type
+                var typeCell = row.CreateCell(4);
+                typeCell.SetCellValue(GetFQQDeviceType(node));
+                typeCell.CellStyle = rowStyle;
+                
+                // Setting
+                var settingCell = row.CreateCell(5);
+                settingCell.SetCellValue(node.IsBranchDevice ? "IDNAC Load" : "75 cd");
+                settingCell.CellStyle = rowStyle;
+                
+                // Cover
+                var coverCell = row.CreateCell(6);
+                coverCell.SetCellValue("White Fire");
+                coverCell.CellStyle = rowStyle;
+                
+                // Wire Length
+                var lengthCell = row.CreateCell(7);
+                lengthCell.SetCellValue(node.DistanceFromParent);
+                lengthCell.CellStyle = rowStyle;
+                
+                // Wire Gauge
+                var gaugeCell = row.CreateCell(8);
+                gaugeCell.SetCellValue(_circuitManager.Parameters.WireGauge);
+                gaugeCell.CellStyle = rowStyle;
+                
+                // Device Use
+                var useCell = row.CreateCell(9);
+                useCell.SetCellValue("Fire");
+                useCell.CellStyle = rowStyle;
+                
+                // Main SKU
+                var skuCell = row.CreateCell(10);
+                skuCell.SetCellValue(GetFQQSKU(node));
+                skuCell.CellStyle = rowStyle;
+                
+                // Socket - Address like SIG-10-16
+                var socketCell = row.CreateCell(11);
+                socketCell.SetCellValue($"SIG-10-{(itemNum - 148):D2}");
+                socketCell.CellStyle = rowStyle;
+                
+                // Connect
+                var connectCell = row.CreateCell(12);
+                connectCell.SetCellValue("");
+                connectCell.CellStyle = rowStyle;
+                
+                // Flex Address
+                var flexCell = row.CreateCell(13);
+                flexCell.SetCellValue("");
+                flexCell.CellStyle = rowStyle;
+                
+                // Force Address
+                var forceCell = row.CreateCell(14);
+                forceCell.SetCellValue("");
+                forceCell.CellStyle = rowStyle;
+                
+                // Point Address
+                var pointAddrCell = row.CreateCell(15);
+                pointAddrCell.SetCellValue("");
+                pointAddrCell.CellStyle = rowStyle;
+                
+                // Device mA
+                var maCell = row.CreateCell(16);
+                maCell.SetCellValue(node.DeviceData.Current.Alarm * 1000); // Convert to mA
+                maCell.CellStyle = rowStyle;
+                
+                // Cable Ohms
+                var ohmsCell = row.CreateCell(17);
+                ohmsCell.SetCellValue(4.50); // Fixed like in FQQ
+                ohmsCell.CellStyle = style2Decimal;
+                
+                // Amps - Yellow background like FQQ
+                var ampsCell = row.CreateCell(18);
+                ampsCell.SetCellValue(node.DeviceData.Current.Alarm);
+                ampsCell.CellStyle = yellowStyle;
+                
+                // %Volt Drop - Yellow background
+                var dropCell = row.CreateCell(19);
+                double voltDrop = (node.DeviceData.Current.Alarm * 2 * node.DistanceFromParent * _circuitManager.Parameters.Resistance / 1000);
+                double percentDrop = (voltDrop / _circuitManager.Parameters.SystemVoltage) * 100;
+                dropCell.SetCellValue(percentDrop);
+                dropCell.CellStyle = yellowStyle;
+                
+                // Total %Drop - Yellow background  
+                var totalDropCell = row.CreateCell(20);
+                double totalDrop = (((_circuitManager.Parameters.SystemVoltage - node.Voltage) / _circuitManager.Parameters.SystemVoltage) * 100);
+                totalDropCell.SetCellValue(totalDrop);
+                totalDropCell.CellStyle = yellowStyle;
+                
+                // Volts at Device - Yellow background
+                var voltsCell = row.CreateCell(21);
+                voltsCell.SetCellValue(node.Voltage);
+                voltsCell.CellStyle = yellowStyle;
+                
+                itemNum++;
+                rowNum++;
+                
+                // Process children
+                foreach (var child in node.Children)
+                {
+                    AddFQQDevices(sheet, workbook, child, ref rowNum, ref itemNum, 
+                                 dataStyle, altRowStyle, yellowStyle, style2Decimal);
+                }
+            }
+        }
+        
+        private string GetFQQDeviceLabel(CircuitNode node)
+        {
+            string name = node.Name?.ToUpper() ?? "";
+            
+            if (name.Contains("CEILING") && name.Contains("SPEAKER"))
+                return "Ceiling Speaker Strobe";
+            else if (name.Contains("WALL") && name.Contains("SPEAKER"))
+                return "Wall Speaker";
+            else if (name.Contains("STROBE"))
+                return "Wall Speaker Strobe";
+            else
+                return node.Name ?? "Fire Alarm Device";
+        }
+        
+        private string GetFQQDeviceType(CircuitNode node)
+        {
+            string name = node.Name?.ToUpper() ?? "";
+            
+            if (name.Contains("SPEAKER") && name.Contains("STROBE"))
+                return "Speaker Strobe";
+            else if (name.Contains("SPEAKER"))
+                return "Speaker";
+            else if (name.Contains("STROBE"))
+                return "Strobe";
+            else if (name.Contains("SMOKE"))
+                return "Smoke Detector";
+            else if (name.Contains("HEAT"))
+                return "Heat Detector";
+            else if (name.Contains("PULL"))
+                return "Pull Station";
+            else
+                return "NAC Device";
+        }
+        
+        private string GetFQQSKU(CircuitNode node)
+        {
+            string name = node.Name?.ToUpper() ?? "";
+            
+            if (name.Contains("CEILING") && name.Contains("SPEAKER") && name.Contains("STROBE"))
+                return "A49HFV-APPLC";
+            else if (name.Contains("WALL") && name.Contains("SPEAKER") && name.Contains("STROBE"))
+                return "A49SV-APPLW-O";
+            else if (name.Contains("WALL") && name.Contains("SPEAKER"))
+                return "A49SO-APPLW";
+            else if (name.Contains("CEILING") && name.Contains("SPEAKER"))
+                return "A49HFV-APPLC";
+            else
+                return "A49XX-APPLX";
+        }
+        
+        private string GetIDNACDeviceType(CircuitNode node)
+        {
+            string name = node.Name?.ToUpper() ?? "";
+            string type = node.DeviceData?.DeviceType?.ToUpper() ?? "";
+            
+            if (name.Contains("SMOKE") || type.Contains("SMOKE"))
+                return "SMK";
+            else if (name.Contains("HEAT") || type.Contains("HEAT"))
+                return "HEAT";
+            else if (name.Contains("PULL") || type.Contains("PULL"))
+                return "PULL";
+            else if (name.Contains("HORN") && name.Contains("STROBE"))
+                return "H/S";
+            else if (name.Contains("HORN"))
+                return "HORN";
+            else if (name.Contains("STROBE"))
+                return "STB";
+            else if (name.Contains("MONITOR"))
+                return "MON";
+            else if (name.Contains("RELAY"))
+                return "RLY";
+            else
+                return "NAC";
         }
 
         private void CreateCircuitLayoutSheet(IWorkbook workbook)

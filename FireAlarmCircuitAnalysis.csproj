@@ -75,6 +75,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="NPOI" Version="2.5.6" />
     <PackageReference Include="iTextSharp" Version="5.5.13.3" />
+    <PackageReference Include="Portable.BouncyCastle" Version="1.9.0" />
     <PackageReference Include="NLog" Version="5.2.5" />
   </ItemGroup>
 
@@ -117,6 +118,6 @@
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="xcopy &quot;$(TargetPath)&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.json&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)Newtonsoft.Json.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)NPOI*.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)ICSharpCode.SharpZipLib.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)iTextSharp.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)NLog.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.addin&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\&quot; /Y" />
+    <Exec Command="xcopy &quot;$(TargetPath)&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.json&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)Newtonsoft.Json.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)NPOI*.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)ICSharpCode.SharpZipLib.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)iTextSharp.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)BouncyCastle.Crypto.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y /Q 2>nul || echo BouncyCastle DLL not found - PDF export may not work&#xD;&#xA;xcopy &quot;$(TargetDir)NLog.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.addin&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\&quot; /Y" />
   </Target>
 </Project>

@@ -91,7 +91,7 @@
           }
         }
       },
-      "Portable.BouncyCastle/1.8.9": {
+      "Portable.BouncyCastle/1.9.0": {
         "type": "package",
         "compile": {
           "lib/net40/BouncyCastle.Crypto.dll": {
@@ -251,10 +251,10 @@
         "npoi.nuspec"
       ]
     },
-    "Portable.BouncyCastle/1.8.9": {
-      "sha512": "wlJo8aFoeyl+W93iFXTK5ShzDYk5WBqoUPjTNEM0Xv9kn1H+4hmuCjF0/n8HLm9Nnp1aY6KNndWqQTNk+NGgRQ==",
+    "Portable.BouncyCastle/1.9.0": {
+      "sha512": "eZZBCABzVOek+id9Xy04HhmgykF0wZg9wpByzrWN7q8qEI0Qen9b7tfd7w8VA3dOeesumMG7C5ZPy0jk7PSRHw==",
       "type": "package",
-      "path": "portable.bouncycastle/1.8.9",
+      "path": "portable.bouncycastle/1.9.0",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -262,7 +262,7 @@
         "lib/net40/BouncyCastle.Crypto.xml",
         "lib/netstandard2.0/BouncyCastle.Crypto.dll",
         "lib/netstandard2.0/BouncyCastle.Crypto.xml",
-        "portable.bouncycastle.1.8.9.nupkg.sha512",
+        "portable.bouncycastle.1.9.0.nupkg.sha512",
         "portable.bouncycastle.nuspec"
       ]
     },
@@ -293,6 +293,7 @@
       "NLog >= 5.2.5",
       "NPOI >= 2.5.6",
       "Newtonsoft.Json >= 13.0.3",
+      "Portable.BouncyCastle >= 1.9.0",
       "iTextSharp >= 5.5.13.3"
     ]
   },
@@ -364,6 +365,10 @@
           "Newtonsoft.Json": {
             "target": "Package",
             "version": "[13.0.3, )"
+          },
+          "Portable.BouncyCastle": {
+            "target": "Package",
+            "version": "[1.9.0, )"
           },
           "iTextSharp": {
             "target": "Package",
