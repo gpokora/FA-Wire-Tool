@@ -894,11 +894,14 @@ namespace FireAlarmCircuitAnalysis
                 // Create a collection with just this element
                 var elementIds = new List<ElementId> { DeviceId };
 
-                // Use ShowElements to zoom and highlight the element
-                uidoc.ShowElements(elementIds);
-
-                // Alternative: Use Selection to highlight the element
+                // First select the element
                 uidoc.Selection.SetElementIds(elementIds);
+
+                // Use ShowElements to zoom to the element
+                uidoc.ShowElements(elementIds);
+                
+                // Alternative approach: Use RefreshActiveView to ensure the view updates
+                uidoc.RefreshActiveView();
             }
             catch (Exception ex)
             {
@@ -910,6 +913,37 @@ namespace FireAlarmCircuitAnalysis
         public string GetName()
         {
             return "Zoom to Fire Alarm Device";
+        }
+    }
+
+    /// <summary>
+    /// Event handler for selecting a device in Revit
+    /// </summary>
+    public class SelectDeviceEventHandler : IExternalEventHandler
+    {
+        public ElementId DeviceId { get; set; }
+
+        public void Execute(UIApplication app)
+        {
+            try
+            {
+                if (DeviceId == null || DeviceId == ElementId.InvalidElementId) return;
+
+                var uidoc = app.ActiveUIDocument;
+                
+                // Select the element
+                var elementIds = new List<ElementId> { DeviceId };
+                uidoc.Selection.SetElementIds(elementIds);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"SelectDeviceEventHandler failed: {ex.Message}");
+            }
+        }
+
+        public string GetName()
+        {
+            return "Select Fire Alarm Device";
         }
     }
 

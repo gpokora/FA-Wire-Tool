@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -39,6 +40,10 @@ namespace FireAlarmCircuitAnalysis.Views
         public ExternalEvent clearOverridesEvent;
         private InitializationEventHandler initializationHandler;
         private ExternalEvent initializationEvent;
+        private ZoomToDeviceEventHandler zoomToDeviceHandler;
+        private ExternalEvent zoomToDeviceEvent;
+        private SelectDeviceEventHandler selectDeviceHandler;
+        private ExternalEvent selectDeviceEvent;
 
         // Wire resistance values (ohms per 1000 ft - SINGLE CONDUCTOR)
         private readonly Dictionary<string, double> WIRE_RESISTANCE = new Dictionary<string, double>
@@ -90,6 +95,12 @@ namespace FireAlarmCircuitAnalysis.Views
             clearCircuitHandler.Window = this;
             clearOverridesHandler.Window = this;
             initializationHandler.Window = this;
+            
+            // Create zoom and select event handlers
+            zoomToDeviceHandler = new ZoomToDeviceEventHandler();
+            zoomToDeviceEvent = ExternalEvent.Create(zoomToDeviceHandler);
+            selectDeviceHandler = new SelectDeviceEventHandler();
+            selectDeviceEvent = ExternalEvent.Create(selectDeviceHandler);
 
             // Trigger initialization in proper Revit API context
             initializationEvent.Raise();
@@ -321,6 +332,7 @@ namespace FireAlarmCircuitAnalysis.Views
                     
                     // Initialize SchematicDrawing with the new circuit manager
                     schematicDrawing = new SchematicDrawing(circuitSchematicCanvas, circuitManager);
+                    schematicDrawing.DeviceSelected += OnSchematicDeviceSelected;
                 }
                 else
                 {
@@ -331,6 +343,7 @@ namespace FireAlarmCircuitAnalysis.Views
                     if (schematicDrawing != null)
                     {
                         schematicDrawing = new SchematicDrawing(circuitSchematicCanvas, circuitManager);
+                        schematicDrawing.DeviceSelected += OnSchematicDeviceSelected;
                     }
                 }
 
@@ -571,13 +584,38 @@ namespace FireAlarmCircuitAnalysis.Views
             {
                 var status = node.Status ?? (node.Voltage >= circuitManager.Parameters.MinVoltage ? "✓" : "✗");
 
+                // Calculate voltage drop percentage
+                var voltageDropPercent = circuitManager.Parameters.SystemVoltage > 0 
+                    ? (node.VoltageDrop / circuitManager.Parameters.SystemVoltage) * 100 
+                    : 0;
+
+                // Calculate cumulative wire length from root
+                var totalWireLength = GetTotalWireLength(node);
+
                 devices.Add(new DeviceListItem
                 {
+                    // Main row properties
                     Position = node.SequenceNumber > 0 ? node.SequenceNumber.ToString() : devices.Count.ToString(),
                     Name = prefix + node.Name,
                     Current = $"{node.DeviceData.Current.Alarm:F3}A",
                     Voltage = $"{node.Voltage:F1}V",
-                    Status = status
+                    Status = status,
+                    
+                    // Detail properties
+                    ElementId = node.ElementId?.IntegerValue.ToString() ?? "N/A",
+                    DeviceType = node.DeviceData.DeviceType ?? "Fire Alarm Device",
+                    DistanceFromParent = $"{node.DistanceFromParent:F1}",
+                    VoltageDrop = $"{node.VoltageDrop:F3}",
+                    VoltageDropPercent = $"{voltageDropPercent:F2}",
+                    AccumulatedLoad = $"{node.AccumulatedLoad:F3}",
+                    SupervisionCurrent = $"{node.DeviceData.Current.Standby:F3}",
+                    TroubleCurrent = $"{node.DeviceData.Current.Alarm:F3}",
+                    WireLength = $"{totalWireLength:F1}",
+                    CircuitPath = GetCircuitPath(node),
+                    IsBranchDevice = node.IsBranchDevice ? "Yes" : "No",
+                    
+                    // Reference to original node
+                    Node = node
                 });
             }
 
@@ -592,6 +630,43 @@ namespace FireAlarmCircuitAnalysis.Views
 
                 BuildDeviceList(child, devices, childPrefix);
             }
+        }
+        
+        /// <summary>
+        /// Calculate total wire length from root to this device
+        /// </summary>
+        private double GetTotalWireLength(CircuitNode node)
+        {
+            double totalLength = 0;
+            var current = node;
+            
+            while (current?.Parent != null)
+            {
+                totalLength += current.DistanceFromParent;
+                current = current.Parent;
+            }
+            
+            return totalLength;
+        }
+        
+        /// <summary>
+        /// Get the full circuit path to this device
+        /// </summary>
+        private string GetCircuitPath(CircuitNode node)
+        {
+            var pathNodes = new List<string>();
+            var current = node;
+            
+            while (current != null)
+            {
+                if (!string.IsNullOrEmpty(current.Name))
+                {
+                    pathNodes.Insert(0, current.Name);
+                }
+                current = current.Parent;
+            }
+            
+            return string.Join(" → ", pathNodes);
         }
 
         private void UpdateStatusDisplay()
@@ -932,6 +1007,7 @@ namespace FireAlarmCircuitAnalysis.Views
 
                                 // Initialize SchematicDrawing with the circuit manager
                                 schematicDrawing = new SchematicDrawing(circuitSchematicCanvas, circuitManager);
+                                schematicDrawing.DeviceSelected += OnSchematicDeviceSelected;
 
                                 circuitManager.LoadConfiguration(configToLoad);
                                 UpdateDisplay();
@@ -953,6 +1029,7 @@ namespace FireAlarmCircuitAnalysis.Views
 
                         // Initialize SchematicDrawing with the circuit manager
                         schematicDrawing = new SchematicDrawing(circuitSchematicCanvas, circuitManager);
+                        schematicDrawing.DeviceSelected += OnSchematicDeviceSelected;
 
                         circuitManager.LoadConfiguration(loadDialog.SelectedConfiguration);
                         UpdateDisplay();
@@ -1357,14 +1434,126 @@ namespace FireAlarmCircuitAnalysis.Views
             {
                 if (elementId == null || elementId == ElementId.InvalidElementId) return;
 
-                // Create external event for zoom operation since it needs Revit API context
-                var zoomHandler = new ZoomToDeviceEventHandler { DeviceId = elementId };
-                var zoomEvent = ExternalEvent.Create(zoomHandler);
-                zoomEvent.Raise();
+                // Set the device ID and raise the event
+                zoomToDeviceHandler.DeviceId = elementId;
+                zoomToDeviceEvent.Raise();
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"ZoomToDevice failed: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Handle device selection from schematic view
+        /// </summary>
+        private void OnSchematicDeviceSelected(object sender, DeviceSelectedEventArgs e)
+        {
+            try
+            {
+                if (e?.Node == null) return;
+                
+                // Select the device in both views and Revit
+                SelectDeviceInAllViews(e.Node);
+                
+                // Zoom to device if checkbox is checked
+                if (chkZoomToSelected.IsChecked == true && e.Node.ElementId != null)
+                {
+                    ZoomToDevice(e.Node.ElementId);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"OnSchematicDeviceSelected failed: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Select device in tree view and list view
+        /// </summary>
+        private void SelectDeviceInAllViews(CircuitNode node)
+        {
+            try
+            {
+                // Find and select in tree view
+                if (svTreeView.Visibility == System.Windows.Visibility.Visible)
+                {
+                    var treeItem = FindTreeViewItem(tvCircuit, node);
+                    if (treeItem != null)
+                    {
+                        treeItem.IsSelected = true;
+                        treeItem.BringIntoView();
+                    }
+                }
+                
+                // Find and select in list view
+                if (dgDevices.Visibility == System.Windows.Visibility.Visible)
+                {
+                    foreach (DeviceListItem item in dgDevices.Items)
+                    {
+                        if (item.Name.Contains(node.Name))
+                        {
+                            dgDevices.SelectedItem = item;
+                            dgDevices.ScrollIntoView(item);
+                            break;
+                        }
+                    }
+                }
+                
+                // Highlight in Revit model
+                if (node.ElementId != null && node.ElementId != ElementId.InvalidElementId)
+                {
+                    selectDeviceHandler.DeviceId = node.ElementId;
+                    selectDeviceEvent.Raise();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"SelectDeviceInAllViews failed: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Find TreeViewItem for a CircuitNode
+        /// </summary>
+        private TreeViewItem FindTreeViewItem(ItemsControl container, CircuitNode nodeToFind)
+        {
+            if (container == null) return null;
+            
+            foreach (var item in container.Items)
+            {
+                var treeViewItem = item as TreeViewItem;
+                if (treeViewItem?.Tag == nodeToFind)
+                {
+                    return treeViewItem;
+                }
+                
+                // Recursively search children
+                var result = FindTreeViewItem(treeViewItem, nodeToFind);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+            
+            return null;
+        }
+        
+        /// <summary>
+        /// Handle expander button click in list view
+        /// </summary>
+        private void ExpanderButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.DataContext is DeviceListItem item)
+            {
+                item.IsExpanded = !item.IsExpanded;
+                
+                // Force DataGrid to refresh row details
+                var row = dgDevices.ItemContainerGenerator.ContainerFromItem(item) as DataGridRow;
+                if (row != null)
+                {
+                    row.DetailsVisibility = item.IsExpanded ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                }
             }
         }
 
@@ -1417,6 +1606,12 @@ namespace FireAlarmCircuitAnalysis.Views
                     tvCircuit.Items.Clear();
                 if (dgDevices != null)
                     dgDevices.ItemsSource = null;
+                    
+                // Dispose of event handlers
+                zoomToDeviceEvent?.Dispose();
+                selectDeviceEvent?.Dispose();
+                zoomToDeviceHandler = null;
+                selectDeviceHandler = null;
             }
         }
 
@@ -1722,14 +1917,54 @@ namespace FireAlarmCircuitAnalysis.Views
     }
 
     /// <summary>
-    /// Device list item for DataGrid
+    /// Device list item for DataGrid with expandable details
     /// </summary>
-    public class DeviceListItem
+    public class DeviceListItem : INotifyPropertyChanged
     {
+        private bool _isExpanded = false;
+        
+        // Main row properties
         public string Position { get; set; }
         public string Name { get; set; }
         public string Current { get; set; }
         public string Voltage { get; set; }
         public string Status { get; set; }
+        
+        // Detail properties
+        public string ElementId { get; set; }
+        public string DeviceType { get; set; }
+        public string DistanceFromParent { get; set; }
+        public string VoltageDrop { get; set; }
+        public string VoltageDropPercent { get; set; }
+        public string AccumulatedLoad { get; set; }
+        public string SupervisionCurrent { get; set; }
+        public string TroubleCurrent { get; set; }
+        public string WireLength { get; set; }
+        public string CircuitPath { get; set; }
+        public string IsBranchDevice { get; set; }
+        
+        // Expansion state
+        public bool IsExpanded
+        {
+            get => _isExpanded;
+            set
+            {
+                _isExpanded = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ExpanderSymbol));
+            }
+        }
+        
+        public string ExpanderSymbol => IsExpanded ? "▼" : "▶";
+        
+        // Reference to original node for additional data
+        public CircuitNode Node { get; set; }
+        
+        public event PropertyChangedEventHandler PropertyChanged;
+        
+        protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
     }
 }

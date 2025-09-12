@@ -251,12 +251,27 @@
                             </TreeView>
                         </ScrollViewer>
 
-                        <!-- List View -->
+                        <!-- List View with Expandable Details -->
                         <DataGrid Name="dgDevices" AutoGenerateColumns="False" 
                                  CanUserAddRows="False" Margin="10" FontSize="11"
                                  SelectionMode="Single" GridLinesVisibility="Horizontal"
-                                 AlternatingRowBackground="#F8F9FA" Visibility="Collapsed">
+                                 AlternatingRowBackground="#F8F9FA" Visibility="Collapsed"
+                                 RowDetailsVisibilityMode="VisibleWhenSelected">
                             <DataGrid.Columns>
+                                <!-- Expander Column -->
+                                <DataGridTemplateColumn Header="" Width="30">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Content="{Binding ExpanderSymbol}" 
+                                                   Background="Transparent" BorderThickness="0"
+                                                   FontFamily="Segoe UI Symbol" FontSize="12" FontWeight="Bold"
+                                                   Foreground="#2C3E50" Cursor="Hand" Padding="2"
+                                                   Click="ExpanderButton_Click"
+                                                   ToolTip="Click to expand/collapse details"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                
                                 <DataGridTextColumn Header="#" Binding="{Binding Position}" 
                                                   Width="50" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Device Name" Binding="{Binding Name}" 
@@ -268,6 +283,98 @@
                                 <DataGridTextColumn Header="Status" Binding="{Binding Status}" 
                                                   Width="60" IsReadOnly="True"/>
                             </DataGrid.Columns>
+                            
+                            <!-- Row Details Template -->
+                            <DataGrid.RowDetailsTemplate>
+                                <DataTemplate>
+                                    <Border Background="#F8F9FA" Padding="10" Margin="5,0,5,5"
+                                           BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="3"
+                                           Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            
+                                            <!-- Column 1: Device Properties -->
+                                            <StackPanel Grid.Column="0" Margin="5">
+                                                <TextBlock Text="DEVICE PROPERTIES" FontWeight="Bold" 
+                                                          Foreground="#2C3E50" FontSize="10" Margin="0,0,0,5"/>
+                                                
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="Element ID: " FontWeight="SemiBold"/>
+                                                    <Run Text="{Binding ElementId}"/>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="Device Type: " FontWeight="SemiBold"/>
+                                                    <Run Text="{Binding DeviceType}"/>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="Branch Device: " FontWeight="SemiBold"/>
+                                                    <Run Text="{Binding IsBranchDevice}"/>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="Circuit Path: " FontWeight="SemiBold"/>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding CircuitPath}" 
+                                                          TextWrapping="Wrap" FontSize="9" 
+                                                          Foreground="#666" Margin="10,0,0,0"/>
+                                            </StackPanel>
+                                            
+                                            <!-- Column 2: Electrical Properties -->
+                                            <StackPanel Grid.Column="1" Margin="5">
+                                                <TextBlock Text="ELECTRICAL PROPERTIES" FontWeight="Bold" 
+                                                          Foreground="#2C3E50" FontSize="10" Margin="0,0,0,5"/>
+                                                
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="Voltage Drop: " FontWeight="SemiBold"/>
+                                                    <Run Text="{Binding VoltageDrop}"/>
+                                                    <Run Text=" V"/>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="Voltage Drop %: " FontWeight="SemiBold"/>
+                                                    <Run Text="{Binding VoltageDropPercent}"/>
+                                                    <Run Text="%"/>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="Accumulated Load: " FontWeight="SemiBold"/>
+                                                    <Run Text="{Binding AccumulatedLoad}"/>
+                                                    <Run Text=" A"/>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="Supervision Current: " FontWeight="SemiBold"/>
+                                                    <Run Text="{Binding SupervisionCurrent}"/>
+                                                    <Run Text=" A"/>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="Trouble Current: " FontWeight="SemiBold"/>
+                                                    <Run Text="{Binding TroubleCurrent}"/>
+                                                    <Run Text=" A"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                            
+                                            <!-- Column 3: Physical Properties -->
+                                            <StackPanel Grid.Column="2" Margin="5">
+                                                <TextBlock Text="PHYSICAL PROPERTIES" FontWeight="Bold" 
+                                                          Foreground="#2C3E50" FontSize="10" Margin="0,0,0,5"/>
+                                                
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="Distance from Parent: " FontWeight="SemiBold"/>
+                                                    <Run Text="{Binding DistanceFromParent}"/>
+                                                    <Run Text=" ft"/>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="Total Wire Length: " FontWeight="SemiBold"/>
+                                                    <Run Text="{Binding WireLength}"/>
+                                                    <Run Text=" ft"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </DataGrid.RowDetailsTemplate>
+                            
                             <DataGrid.RowStyle>
                                 <Style TargetType="DataGridRow">
                                     <Style.Triggers>

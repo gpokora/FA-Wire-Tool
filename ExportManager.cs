@@ -8,8 +8,10 @@ using NPOI.SS.UserModel;
 using NPOI.XSSF.UserModel;
 using NPOI.SS.Util;
 using NPOI.HSSF.Util;
-using iTextSharp.text;
-using iTextSharp.text.pdf;
+using PdfSharp;
+using PdfSharp.Drawing;
+using PdfSharp.Pdf;
+using System.Diagnostics;
 using Newtonsoft.Json;
 
 namespace FireAlarmCircuitAnalysis
@@ -78,15 +80,16 @@ namespace FireAlarmCircuitAnalysis
                 }
             }
             
-            // Check iTextSharp
+            // Check PdfSharp
             try
             {
-                var testDoc = new Document();
-                sb.AppendLine("✓ iTextSharp: Available and working");
+                var testDoc = new PdfDocument();
+                testDoc.AddPage();
+                sb.AppendLine("✓ PdfSharp: Available and working");
             }
             catch (Exception ex)
             {
-                sb.AppendLine($"✗ iTextSharp: Error - {ex.Message}");
+                sb.AppendLine($"✗ PdfSharp: Error - {ex.Message}");
             }
             
             // Check file system permissions
@@ -477,14 +480,13 @@ namespace FireAlarmCircuitAnalysis
             style2Decimal.BorderRight = BorderStyle.Thin;
             style2Decimal.Alignment = HorizontalAlignment.Center;
             
-            // FQQ Headers - exactly matching the screenshot
+            // Updated Headers with proper mapping including SKU
             var headerRow = sheet.CreateRow(0);
             string[] fqqHeaders = { 
-                "Item", "Circuit", "Point", "Label", "Type", "Setting", "Cover", 
-                "Wire Length", "Wire Gauge", "Device Use", "Main SKU", "Socket", 
-                "Connect", "Flex Address", "Force Address", "Point Address", 
-                "Device mA", "Cable Ohms", "Amps", "%Volt Drop", "Total %Drop", 
-                "Volts at Device"
+                "Item", "Panel Number", "Circuit Number", "Device Number", "Label", "SKU", "Candela", "Wattage", 
+                "Wire Length", "Wire Gauge", "Address", "Device mA", "Current (A)", 
+                "Voltage Drop (V)", "Voltage Drop %", "Total Voltage Drop %", "Voltage at Device (V)",
+                "Distance from Parent (ft)", "Accumulated Load (A)", "Status"
             };
             
             for (int i = 0; i < fqqHeaders.Length; i++)
@@ -494,35 +496,33 @@ namespace FireAlarmCircuitAnalysis
                 cell.CellStyle = headerStyle;
             }
             
-            // Add FQQ device data
+            // Add device data
             int dataRow = 1;
-            int itemNum = 165;  // Starting like in FQQ screenshot
+            int itemNum = 1;  // Starting with 1 as requested
             AddFQQDevices(sheet, workbook, _circuitManager.RootNode, ref dataRow, ref itemNum,
                          dataStyle, altRowStyle, yellowStyle, style2Decimal);
             
-            // FQQ Column widths - matching screenshot proportions
+            // Column widths for new structure including SKU
             sheet.SetColumnWidth(0, 8 * 256);   // Item
-            sheet.SetColumnWidth(1, 8 * 256);   // Circuit
-            sheet.SetColumnWidth(2, 8 * 256);   // Point
-            sheet.SetColumnWidth(3, 20 * 256);  // Label
-            sheet.SetColumnWidth(4, 15 * 256);  // Type
-            sheet.SetColumnWidth(5, 12 * 256);  // Setting
-            sheet.SetColumnWidth(6, 12 * 256);  // Cover
-            sheet.SetColumnWidth(7, 10 * 256);  // Wire Length
-            sheet.SetColumnWidth(8, 10 * 256);  // Wire Gauge
-            sheet.SetColumnWidth(9, 10 * 256);  // Device Use
-            sheet.SetColumnWidth(10, 15 * 256); // Main SKU
-            sheet.SetColumnWidth(11, 12 * 256); // Socket
-            sheet.SetColumnWidth(12, 10 * 256); // Connect
-            sheet.SetColumnWidth(13, 12 * 256); // Flex Address
-            sheet.SetColumnWidth(14, 12 * 256); // Force Address
-            sheet.SetColumnWidth(15, 12 * 256); // Point Address
-            sheet.SetColumnWidth(16, 10 * 256); // Device mA
-            sheet.SetColumnWidth(17, 10 * 256); // Cable Ohms
-            sheet.SetColumnWidth(18, 8 * 256);  // Amps
-            sheet.SetColumnWidth(19, 10 * 256); // %Volt Drop
-            sheet.SetColumnWidth(20, 10 * 256); // Total %Drop
-            sheet.SetColumnWidth(21, 12 * 256); // Volts at Device
+            sheet.SetColumnWidth(1, 12 * 256);  // Panel Number
+            sheet.SetColumnWidth(2, 12 * 256);  // Circuit Number
+            sheet.SetColumnWidth(3, 12 * 256);  // Device Number
+            sheet.SetColumnWidth(4, 25 * 256);  // Label
+            sheet.SetColumnWidth(5, 20 * 256);  // SKU
+            sheet.SetColumnWidth(6, 10 * 256);  // Candela
+            sheet.SetColumnWidth(7, 10 * 256);  // Wattage
+            sheet.SetColumnWidth(8, 12 * 256);  // Wire Length
+            sheet.SetColumnWidth(9, 12 * 256);  // Wire Gauge
+            sheet.SetColumnWidth(10, 15 * 256); // Address
+            sheet.SetColumnWidth(11, 12 * 256); // Device mA
+            sheet.SetColumnWidth(12, 12 * 256); // Current (A)
+            sheet.SetColumnWidth(13, 15 * 256); // Voltage Drop (V)
+            sheet.SetColumnWidth(14, 15 * 256); // Voltage Drop %
+            sheet.SetColumnWidth(15, 18 * 256); // Total Voltage Drop %
+            sheet.SetColumnWidth(16, 18 * 256); // Voltage at Device (V)
+            sheet.SetColumnWidth(17, 20 * 256); // Distance from Parent (ft)
+            sheet.SetColumnWidth(18, 18 * 256); // Accumulated Load (A)
+            sheet.SetColumnWidth(19, 12 * 256); // Status
             
             // Freeze panes
             sheet.CreateFreezePane(0, 1);
@@ -546,118 +546,121 @@ namespace FireAlarmCircuitAnalysis
                 bool isAlternateRow = (rowNum % 2 == 0);
                 var rowStyle = isAlternateRow ? altRowStyle : dataStyle;
                 
-                // Item
+                // 0. Item - Sequential number starting with 1
                 var itemCell = row.CreateCell(0);
                 itemCell.SetCellValue(itemNum);
                 itemCell.CellStyle = rowStyle;
                 
-                // Circuit
-                var circuitCell = row.CreateCell(1);
-                circuitCell.SetCellValue(7); // Circuit 7 like in FQQ
+                // 1. Panel Number - from "CAB#" parameter
+                var panelCell = row.CreateCell(1);
+                panelCell.SetCellValue(GetParameterValue(node, "CAB#", "1"));
+                panelCell.CellStyle = rowStyle;
+                
+                // 2. Circuit Number - from "CKT#" parameter
+                var circuitCell = row.CreateCell(2);
+                circuitCell.SetCellValue(GetParameterValue(node, "CKT#", "1"));
                 circuitCell.CellStyle = rowStyle;
                 
-                // Point
-                var pointCell = row.CreateCell(2);
-                pointCell.SetCellValue("3FL"); // 3FL like in FQQ
-                pointCell.CellStyle = rowStyle;
+                // 3. Device Number - from "MODD ADD" parameter
+                var deviceNumCell = row.CreateCell(3);
+                deviceNumCell.SetCellValue(GetParameterValue(node, "MODD ADD", node.SequenceNumber.ToString()));
+                deviceNumCell.CellStyle = rowStyle;
                 
-                // Label - Device Name
-                var labelCell = row.CreateCell(3);
-                labelCell.SetCellValue(GetFQQDeviceLabel(node));
+                // 4. Label - from family type name
+                var labelCell = row.CreateCell(4);
+                labelCell.SetCellValue(node.DeviceData.DeviceType ?? node.Name ?? "Fire Alarm Device");
                 labelCell.CellStyle = rowStyle;
                 
-                // Type
-                var typeCell = row.CreateCell(4);
-                typeCell.SetCellValue(GetFQQDeviceType(node));
-                typeCell.CellStyle = rowStyle;
+                // 5. SKU - from family instance model parameter
+                var skuCell = row.CreateCell(5);
+                var skuValue = GetParameterValue(node, "Model", "");
+                if (string.IsNullOrEmpty(skuValue))
+                {
+                    // Try alternative parameter names if Model is not found
+                    skuValue = GetParameterValue(node, "Type Model", "");
+                    if (string.IsNullOrEmpty(skuValue))
+                        skuValue = GetParameterValue(node, "Part Number", "N/A");
+                }
+                skuCell.SetCellValue(skuValue);
+                skuCell.CellStyle = rowStyle;
                 
-                // Setting
-                var settingCell = row.CreateCell(5);
-                settingCell.SetCellValue(node.IsBranchDevice ? "IDNAC Load" : "75 cd");
-                settingCell.CellStyle = rowStyle;
+                // 6. Candela - from "CANDELA" parameter
+                var candelaCell = row.CreateCell(6);
+                candelaCell.SetCellValue(GetParameterValue(node, "CANDELA", "75"));
+                candelaCell.CellStyle = rowStyle;
                 
-                // Cover
-                var coverCell = row.CreateCell(6);
-                coverCell.SetCellValue("White Fire");
-                coverCell.CellStyle = rowStyle;
+                // 7. Wattage - from "Wattage" parameter
+                var wattageCell = row.CreateCell(7);
+                wattageCell.SetCellValue(GetParameterValue(node, "Wattage", "N/A"));
+                wattageCell.CellStyle = rowStyle;
                 
-                // Wire Length
-                var lengthCell = row.CreateCell(7);
-                lengthCell.SetCellValue(node.DistanceFromParent);
-                lengthCell.CellStyle = rowStyle;
+                // 8. Wire Length - calculated total wire length
+                var lengthCell = row.CreateCell(8);
+                lengthCell.SetCellValue(Math.Round(GetTotalWireLength(node), 2));
+                lengthCell.CellStyle = style2Decimal;
                 
-                // Wire Gauge
-                var gaugeCell = row.CreateCell(8);
+                // 9. Wire Gauge - from selected wire gauge
+                var gaugeCell = row.CreateCell(9);
                 gaugeCell.SetCellValue(_circuitManager.Parameters.WireGauge);
                 gaugeCell.CellStyle = rowStyle;
                 
-                // Device Use
-                var useCell = row.CreateCell(9);
-                useCell.SetCellValue("Fire");
-                useCell.CellStyle = rowStyle;
+                // 10. Address - from "ICP_CIRCUIT_ADDRESS" parameter
+                var addressCell = row.CreateCell(10);
+                addressCell.SetCellValue(GetParameterValue(node, "ICP_CIRCUIT_ADDRESS", "N/A"));
+                addressCell.CellStyle = rowStyle;
                 
-                // Main SKU
-                var skuCell = row.CreateCell(10);
-                skuCell.SetCellValue(GetFQQSKU(node));
-                skuCell.CellStyle = rowStyle;
+                // 11. Device mA - from "CURRENT DRAW" parameter
+                var devicemACell = row.CreateCell(11);
+                var currentDrawValue = GetParameterValueAsDouble(node, "CURRENT DRAW", node.DeviceData.Current.Alarm * 1000);
+                devicemACell.SetCellValue(Math.Round(currentDrawValue, 2));
+                devicemACell.CellStyle = style2Decimal;
                 
-                // Socket - Address like SIG-10-16
-                var socketCell = row.CreateCell(11);
-                socketCell.SetCellValue($"SIG-10-{(itemNum - 148):D2}");
-                socketCell.CellStyle = rowStyle;
+                // 12. Current (A) - calculated alarm current
+                var currentCell = row.CreateCell(12);
+                currentCell.SetCellValue(Math.Round(node.DeviceData.Current.Alarm, 2));
+                currentCell.CellStyle = style2Decimal;
                 
-                // Connect
-                var connectCell = row.CreateCell(12);
-                connectCell.SetCellValue("");
-                connectCell.CellStyle = rowStyle;
+                // 13. Voltage Drop (V) - this segment only
+                var voltDropCell = row.CreateCell(13);
+                voltDropCell.SetCellValue(Math.Round(node.VoltageDrop, 2));
+                voltDropCell.CellStyle = style2Decimal;
                 
-                // Flex Address
-                var flexCell = row.CreateCell(13);
-                flexCell.SetCellValue("");
-                flexCell.CellStyle = rowStyle;
+                // 14. Voltage Drop % - this segment only
+                var voltDropPercentCell = row.CreateCell(14);
+                var voltDropPercent = _circuitManager.Parameters.SystemVoltage > 0 
+                    ? (node.VoltageDrop / _circuitManager.Parameters.SystemVoltage) * 100 
+                    : 0;
+                voltDropPercentCell.SetCellValue(Math.Round(voltDropPercent, 2));
+                voltDropPercentCell.CellStyle = style2Decimal;
                 
-                // Force Address
-                var forceCell = row.CreateCell(14);
-                forceCell.SetCellValue("");
-                forceCell.CellStyle = rowStyle;
+                // 15. Total Voltage Drop % - cumulative from source
+                var totalDropCell = row.CreateCell(15);
+                var totalDropPercent = _circuitManager.Parameters.SystemVoltage > 0 
+                    ? ((_circuitManager.Parameters.SystemVoltage - node.Voltage) / _circuitManager.Parameters.SystemVoltage) * 100 
+                    : 0;
+                totalDropCell.SetCellValue(Math.Round(totalDropPercent, 2));
+                totalDropCell.CellStyle = style2Decimal;
                 
-                // Point Address
-                var pointAddrCell = row.CreateCell(15);
-                pointAddrCell.SetCellValue("");
-                pointAddrCell.CellStyle = rowStyle;
+                // 16. Voltage at Device (V)
+                var voltsCell = row.CreateCell(16);
+                voltsCell.SetCellValue(Math.Round(node.Voltage, 2));
+                voltsCell.CellStyle = style2Decimal;
                 
-                // Device mA
-                var maCell = row.CreateCell(16);
-                maCell.SetCellValue(node.DeviceData.Current.Alarm * 1000); // Convert to mA
-                maCell.CellStyle = rowStyle;
+                // 17. Distance from Parent (ft)
+                var distanceCell = row.CreateCell(17);
+                distanceCell.SetCellValue(Math.Round(node.DistanceFromParent, 2));
+                distanceCell.CellStyle = style2Decimal;
                 
-                // Cable Ohms
-                var ohmsCell = row.CreateCell(17);
-                ohmsCell.SetCellValue(4.50); // Fixed like in FQQ
-                ohmsCell.CellStyle = style2Decimal;
+                // 18. Accumulated Load (A)
+                var accLoadCell = row.CreateCell(18);
+                accLoadCell.SetCellValue(Math.Round(node.AccumulatedLoad, 2));
+                accLoadCell.CellStyle = style2Decimal;
                 
-                // Amps - Yellow background like FQQ
-                var ampsCell = row.CreateCell(18);
-                ampsCell.SetCellValue(node.DeviceData.Current.Alarm);
-                ampsCell.CellStyle = yellowStyle;
-                
-                // %Volt Drop - Yellow background
-                var dropCell = row.CreateCell(19);
-                double voltDrop = (node.DeviceData.Current.Alarm * 2 * node.DistanceFromParent * _circuitManager.Parameters.Resistance / 1000);
-                double percentDrop = (voltDrop / _circuitManager.Parameters.SystemVoltage) * 100;
-                dropCell.SetCellValue(percentDrop);
-                dropCell.CellStyle = yellowStyle;
-                
-                // Total %Drop - Yellow background  
-                var totalDropCell = row.CreateCell(20);
-                double totalDrop = (((_circuitManager.Parameters.SystemVoltage - node.Voltage) / _circuitManager.Parameters.SystemVoltage) * 100);
-                totalDropCell.SetCellValue(totalDrop);
-                totalDropCell.CellStyle = yellowStyle;
-                
-                // Volts at Device - Yellow background
-                var voltsCell = row.CreateCell(21);
-                voltsCell.SetCellValue(node.Voltage);
-                voltsCell.CellStyle = yellowStyle;
+                // 19. Status
+                var statusCell = row.CreateCell(19);
+                var status = node.Voltage >= _circuitManager.Parameters.MinVoltage ? "OK" : "LOW VOLTAGE";
+                statusCell.SetCellValue(status);
+                statusCell.CellStyle = rowStyle;
                 
                 itemNum++;
                 rowNum++;
@@ -719,6 +722,58 @@ namespace FireAlarmCircuitAnalysis
                 return "A49HFV-APPLC";
             else
                 return "A49XX-APPLX";
+        }
+        
+        /// <summary>
+        /// Extract parameter value from device data
+        /// </summary>
+        private string GetParameterValue(CircuitNode node, string parameterName, string defaultValue = "")
+        {
+            try
+            {
+                if (node?.DeviceData?.Element == null) return defaultValue;
+                
+                // Try to get parameter from the Revit element
+                var param = node.DeviceData.Element.LookupParameter(parameterName);
+                if (param != null && param.HasValue)
+                {
+                    return param.AsString() ?? param.AsValueString() ?? defaultValue;
+                }
+                
+                return defaultValue;
+            }
+            catch
+            {
+                return defaultValue;
+            }
+        }
+        
+        /// <summary>
+        /// Extract numeric parameter value
+        /// </summary>
+        private double GetParameterValueAsDouble(CircuitNode node, string parameterName, double defaultValue = 0.0)
+        {
+            var stringValue = GetParameterValue(node, parameterName);
+            if (double.TryParse(stringValue, out double result))
+                return result;
+            return defaultValue;
+        }
+        
+        /// <summary>
+        /// Calculate total wire length from root to device
+        /// </summary>
+        private double GetTotalWireLength(CircuitNode node)
+        {
+            double totalLength = 0;
+            var current = node;
+            
+            while (current?.Parent != null)
+            {
+                totalLength += current.DistanceFromParent;
+                current = current.Parent;
+            }
+            
+            return totalLength;
         }
         
         private string GetIDNACDeviceType(CircuitNode node)
@@ -1266,15 +1321,16 @@ namespace FireAlarmCircuitAnalysis
                         break;
                         
                     case "PDF":
-                        // Test iTextSharp availability
+                        // Test PdfSharp availability
                         try
                         {
-                            var testDoc = new Document();
-                            // If we get here, iTextSharp is working
+                            var testDoc = new PdfDocument();
+                            testDoc.AddPage();
+                            // If we get here, PdfSharp is working
                         }
                         catch (Exception ex)
                         {
-                            error = $"iTextSharp not available: {ex.Message}";
+                            error = $"PdfSharp not available: {ex.Message}";
                             return false;
                         }
                         break;
@@ -1300,109 +1356,148 @@ namespace FireAlarmCircuitAnalysis
                     Directory.CreateDirectory(directory);
                 }
                 
-                var doc = new Document(PageSize.LETTER);
-                using (var writer = PdfWriter.GetInstance(doc, new FileStream(filePath, FileMode.Create)))
+                // Create a new PDF document
+                using (var document = new PdfDocument())
                 {
-                    doc.Open();
+                    document.Info.Title = "Fire Alarm Circuit Analysis Report";
+                    document.Info.Author = "Fire Alarm Circuit Analysis Tool";
+                    document.Info.Subject = "Circuit Analysis Report";
                     
-                    // Fonts
-                    var titleFont = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 18);
-                    var headerFont = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 12);
-                    var normalFont = FontFactory.GetFont(FontFactory.HELVETICA, 10);
+                    // Add a page
+                    var page = document.AddPage();
+                    page.Size = PageSize.Letter;
+                    var gfx = XGraphics.FromPdfPage(page);
+                    
+                    // Define fonts
+                    var titleFont = new XFont("Arial", 18, XFontStyle.Bold);
+                    var headerFont = new XFont("Arial", 12, XFontStyle.Bold);
+                    var normalFont = new XFont("Arial", 10, XFontStyle.Regular);
+                    var smallFont = new XFont("Arial", 9, XFontStyle.Regular);
+                    
+                    // Define colors
+                    var blackBrush = XBrushes.Black;
+                    var grayBrush = XBrushes.LightGray;
+                    var redBrush = new XSolidBrush(XColor.FromArgb(255, 200, 200));
+                    
+                    double yPosition = 40;
+                    double leftMargin = 40;
+                    double pageWidth = page.Width - 80;
                     
                     // Title
-                    doc.Add(new Paragraph("FIRE ALARM CIRCUIT ANALYSIS REPORT", titleFont));
-                    doc.Add(new Paragraph($"Generated: {_report.GeneratedDate:yyyy-MM-dd HH:mm:ss}", normalFont));
-                    doc.Add(new Paragraph(" "));
+                    gfx.DrawString("FIRE ALARM CIRCUIT ANALYSIS REPORT", titleFont, blackBrush,
+                        new XRect(leftMargin, yPosition, pageWidth, 30), XStringFormats.TopLeft);
+                    yPosition += 30;
+                    
+                    gfx.DrawString($"Generated: {_report.GeneratedDate:yyyy-MM-dd HH:mm:ss}", normalFont, blackBrush,
+                        new XRect(leftMargin, yPosition, pageWidth, 20), XStringFormats.TopLeft);
+                    yPosition += 40;
                     
                     // System Parameters
-                    doc.Add(new Paragraph("SYSTEM PARAMETERS", headerFont));
-                    var paramTable = new PdfPTable(2);
-                    paramTable.WidthPercentage = 50;
-                    paramTable.HorizontalAlignment = Element.ALIGN_LEFT;
+                    gfx.DrawString("SYSTEM PARAMETERS", headerFont, blackBrush,
+                        new XRect(leftMargin, yPosition, pageWidth, 20), XStringFormats.TopLeft);
+                    yPosition += 25;
                     
-                    paramTable.AddCell(new PdfPCell(new Phrase("System Voltage:", normalFont)));
-                    paramTable.AddCell(new PdfPCell(new Phrase($"{_report.Parameters.SystemVoltage} VDC", normalFont)));
+                    // Parameters table
+                    DrawParameterRow(gfx, "System Voltage:", $"{_report.Parameters.SystemVoltage} VDC", 
+                        leftMargin, ref yPosition, normalFont);
+                    DrawParameterRow(gfx, "Minimum Voltage:", $"{_report.Parameters.MinVoltage} VDC", 
+                        leftMargin, ref yPosition, normalFont);
+                    DrawParameterRow(gfx, "Wire Gauge:", _report.Parameters.WireGauge, 
+                        leftMargin, ref yPosition, normalFont);
+                    DrawParameterRow(gfx, "Max Load:", $"{_report.Parameters.MaxLoad} A", 
+                        leftMargin, ref yPosition, normalFont);
+                    DrawParameterRow(gfx, "Usable Load:", $"{_report.Parameters.UsableLoad} A", 
+                        leftMargin, ref yPosition, normalFont);
+                    DrawParameterRow(gfx, "Supply Distance:", $"{_report.Parameters.SupplyDistance} ft", 
+                        leftMargin, ref yPosition, normalFont);
                     
-                    paramTable.AddCell(new PdfPCell(new Phrase("Minimum Voltage:", normalFont)));
-                    paramTable.AddCell(new PdfPCell(new Phrase($"{_report.Parameters.MinVoltage} VDC", normalFont)));
-                    
-                    paramTable.AddCell(new PdfPCell(new Phrase("Wire Gauge:", normalFont)));
-                    paramTable.AddCell(new PdfPCell(new Phrase(_report.Parameters.WireGauge, normalFont)));
-                    
-                    paramTable.AddCell(new PdfPCell(new Phrase("Max Load:", normalFont)));
-                    paramTable.AddCell(new PdfPCell(new Phrase($"{_report.Parameters.MaxLoad} A", normalFont)));
-                    
-                    paramTable.AddCell(new PdfPCell(new Phrase("Usable Load:", normalFont)));
-                    paramTable.AddCell(new PdfPCell(new Phrase($"{_report.Parameters.UsableLoad} A", normalFont)));
-                    
-                    paramTable.AddCell(new PdfPCell(new Phrase("Supply Distance:", normalFont)));
-                    paramTable.AddCell(new PdfPCell(new Phrase($"{_report.Parameters.SupplyDistance} ft", normalFont)));
-                    
-                    doc.Add(paramTable);
-                    doc.Add(new Paragraph(" "));
+                    yPosition += 20;
                     
                     // Circuit Summary
-                    doc.Add(new Paragraph("CIRCUIT SUMMARY", headerFont));
-                    var summaryTable = new PdfPTable(2);
-                    summaryTable.WidthPercentage = 50;
-                    summaryTable.HorizontalAlignment = Element.ALIGN_LEFT;
+                    gfx.DrawString("CIRCUIT SUMMARY", headerFont, blackBrush,
+                        new XRect(leftMargin, yPosition, pageWidth, 20), XStringFormats.TopLeft);
+                    yPosition += 25;
                     
-                    summaryTable.AddCell(new PdfPCell(new Phrase("Total Devices:", normalFont)));
-                    summaryTable.AddCell(new PdfPCell(new Phrase(_report.TotalDevices.ToString(), normalFont)));
+                    DrawParameterRow(gfx, "Total Devices:", _report.TotalDevices.ToString(), 
+                        leftMargin, ref yPosition, normalFont);
+                    DrawParameterRow(gfx, "Total Alarm Load:", $"{_report.TotalLoad:F3} A", 
+                        leftMargin, ref yPosition, normalFont);
+                    DrawParameterRow(gfx, "Total Wire Length:", $"{_report.TotalWireLength:F1} ft", 
+                        leftMargin, ref yPosition, normalFont);
+                    DrawParameterRow(gfx, "Max Voltage Drop:", $"{_report.MaxVoltageDrop:F2} V ({_report.MaxVoltageDropPercent:F1}%)", 
+                        leftMargin, ref yPosition, normalFont);
+                    DrawParameterRow(gfx, "End-of-Line Voltage:", $"{_report.Parameters.SystemVoltage - _report.MaxVoltageDrop:F1} V", 
+                        leftMargin, ref yPosition, normalFont);
                     
-                    summaryTable.AddCell(new PdfPCell(new Phrase("Total Alarm Load:", normalFont)));
-                    summaryTable.AddCell(new PdfPCell(new Phrase($"{_report.TotalLoad:F3} A", normalFont)));
+                    // Validation Status
+                    var statusBrush = _report.IsValid ? grayBrush : redBrush;
+                    var statusText = _report.IsValid ? "PASS" : "FAIL";
+                    gfx.DrawRectangle(statusBrush, leftMargin + 150, yPosition - 2, 60, 18);
+                    DrawParameterRow(gfx, "Validation Status:", statusText, 
+                        leftMargin, ref yPosition, headerFont);
                     
-                    summaryTable.AddCell(new PdfPCell(new Phrase("Total Wire Length:", normalFont)));
-                    summaryTable.AddCell(new PdfPCell(new Phrase($"{_report.TotalWireLength:F1} ft", normalFont)));
+                    // Check if we need a new page for device details
+                    if (yPosition > page.Height - 200)
+                    {
+                        page = document.AddPage();
+                        page.Size = PageSize.Letter;
+                        gfx = XGraphics.FromPdfPage(page);
+                        yPosition = 40;
+                    }
                     
-                    summaryTable.AddCell(new PdfPCell(new Phrase("Max Voltage Drop:", normalFont)));
-                    summaryTable.AddCell(new PdfPCell(new Phrase($"{_report.MaxVoltageDrop:F2} V ({_report.MaxVoltageDropPercent:F1}%)", normalFont)));
-                    
-                    summaryTable.AddCell(new PdfPCell(new Phrase("End-of-Line Voltage:", normalFont)));
-                    summaryTable.AddCell(new PdfPCell(new Phrase($"{_report.Parameters.SystemVoltage - _report.MaxVoltageDrop:F1} V", normalFont)));
-                    
-                    summaryTable.AddCell(new PdfPCell(new Phrase("Validation Status:", normalFont)));
-                    var statusCell = new PdfPCell(new Phrase(_report.IsValid ? "PASS" : "FAIL", headerFont));
-                    statusCell.BackgroundColor = _report.IsValid ? BaseColor.LIGHT_GRAY : new BaseColor(255, 200, 200);
-                    summaryTable.AddCell(statusCell);
-                    
-                    doc.Add(summaryTable);
-                    doc.Add(new Paragraph(" "));
+                    yPosition += 20;
                     
                     // Device Details
-                    doc.Add(new Paragraph("DEVICE DETAILS", headerFont));
-                    var deviceTable = new PdfPTable(6);
-                    deviceTable.WidthPercentage = 100;
-                    deviceTable.SetWidths(new float[] { 10f, 30f, 20f, 15f, 15f, 10f });
+                    gfx.DrawString("DEVICE DETAILS", headerFont, blackBrush,
+                        new XRect(leftMargin, yPosition, pageWidth, 20), XStringFormats.TopLeft);
+                    yPosition += 25;
                     
-                    // Headers
-                    deviceTable.AddCell(new PdfPCell(new Phrase("Pos", headerFont)));
-                    deviceTable.AddCell(new PdfPCell(new Phrase("Device Name", headerFont)));
-                    deviceTable.AddCell(new PdfPCell(new Phrase("Type", headerFont)));
-                    deviceTable.AddCell(new PdfPCell(new Phrase("Current", headerFont)));
-                    deviceTable.AddCell(new PdfPCell(new Phrase("Voltage", headerFont)));
-                    deviceTable.AddCell(new PdfPCell(new Phrase("Status", headerFont)));
+                    // Table headers
+                    double[] columnWidths = { 40, 180, 120, 80, 80, 60 };
+                    string[] headers = { "Pos", "Device Name", "Type", "Current", "Voltage", "Status" };
+                    double xPos = leftMargin;
+                    
+                    // Draw header row
+                    for (int i = 0; i < headers.Length; i++)
+                    {
+                        gfx.DrawRectangle(grayBrush, xPos, yPosition - 2, columnWidths[i], 18);
+                        gfx.DrawString(headers[i], smallFont, blackBrush,
+                            new XRect(xPos + 2, yPosition, columnWidths[i] - 4, 15), XStringFormats.TopLeft);
+                        xPos += columnWidths[i];
+                    }
+                    yPosition += 20;
                     
                     // Add devices
                     int pdfPosition = 1;
-                    AddDevicesToPDF(deviceTable, _circuitManager.RootNode, ref pdfPosition, normalFont);
+                    AddDevicesToPDFSharp(gfx, document, _circuitManager.RootNode, ref pdfPosition, 
+                        ref yPosition, ref page, smallFont, columnWidths, leftMargin);
                     
-                    doc.Add(deviceTable);
-                    
-                    // Validation Errors
+                    // Validation Errors (on new page if needed)
                     if (!_report.IsValid && _report.ValidationErrors.Count > 0)
                     {
-                        doc.Add(new Paragraph(" "));
-                        doc.Add(new Paragraph("VALIDATION ERRORS", headerFont));
+                        if (yPosition > page.Height - 100)
+                        {
+                            page = document.AddPage();
+                            page.Size = PageSize.Letter;
+                            gfx = XGraphics.FromPdfPage(page);
+                            yPosition = 40;
+                        }
+                        
+                        yPosition += 20;
+                        gfx.DrawString("VALIDATION ERRORS", headerFont, blackBrush,
+                            new XRect(leftMargin, yPosition, pageWidth, 20), XStringFormats.TopLeft);
+                        yPosition += 25;
+                        
                         foreach (var error in _report.ValidationErrors)
                         {
-                            doc.Add(new Paragraph($"• {error}", normalFont));
+                            gfx.DrawString($"• {error}", normalFont, blackBrush,
+                                new XRect(leftMargin, yPosition, pageWidth, 20), XStringFormats.TopLeft);
+                            yPosition += 20;
                         }
                     }
                     
-                    doc.Close();
+                    // Save the document
+                    document.Save(filePath);
                     return true;
                 }
             }
@@ -1413,34 +1508,87 @@ namespace FireAlarmCircuitAnalysis
                 return false;
             }
         }
-
-        private void AddDevicesToPDF(PdfPTable table, CircuitNode node, ref int position, Font font)
+        
+        private void DrawParameterRow(XGraphics gfx, string label, string value, double x, ref double y, XFont font)
+        {
+            gfx.DrawString(label, font, XBrushes.Black, new XRect(x, y, 150, 20), XStringFormats.TopLeft);
+            gfx.DrawString(value, font, XBrushes.Black, new XRect(x + 150, y, 200, 20), XStringFormats.TopLeft);
+            y += 18;
+        }
+        
+        private void AddDevicesToPDFSharp(XGraphics gfx, PdfDocument document, CircuitNode node, 
+            ref int position, ref double yPosition, ref PdfPage page, XFont font, 
+            double[] columnWidths, double leftMargin)
         {
             if (node.NodeType == "Device" && node.DeviceData != null)
             {
+                // Check if we need a new page
+                if (yPosition > page.Height - 40)
+                {
+                    page = document.AddPage();
+                    page.Size = PageSize.Letter;
+                    gfx = XGraphics.FromPdfPage(page);
+                    yPosition = 40;
+                    
+                    // Redraw headers on new page
+                    string[] headers = { "Pos", "Device Name", "Type", "Current", "Voltage", "Status" };
+                    double headerXPos = leftMargin;
+                    for (int i = 0; i < headers.Length; i++)
+                    {
+                        gfx.DrawRectangle(XBrushes.LightGray, headerXPos, yPosition - 2, columnWidths[i], 18);
+                        gfx.DrawString(headers[i], font, XBrushes.Black,
+                            new XRect(headerXPos + 2, yPosition, columnWidths[i] - 4, 15), XStringFormats.TopLeft);
+                        headerXPos += columnWidths[i];
+                    }
+                    yPosition += 20;
+                }
+                
                 var status = node.Voltage >= _circuitManager.Parameters.MinVoltage ? "OK" : "LOW";
+                var statusBrush = status == "LOW" ? new XSolidBrush(XColor.FromArgb(255, 200, 200)) : XBrushes.White;
                 
-                table.AddCell(new PdfPCell(new Phrase(position.ToString(), font)));
-                table.AddCell(new PdfPCell(new Phrase(node.Name, font)));
-                table.AddCell(new PdfPCell(new Phrase(node.DeviceData.DeviceType ?? "Fire Alarm", font)));
-                table.AddCell(new PdfPCell(new Phrase($"{node.DeviceData.Current.Alarm:F3} A", font)));
-                table.AddCell(new PdfPCell(new Phrase($"{node.Voltage:F1} V", font)));
+                double xPos = leftMargin;
                 
-                var statusCell = new PdfPCell(new Phrase(status, font));
+                // Draw row background for LOW voltage
                 if (status == "LOW")
                 {
-                    statusCell.BackgroundColor = new BaseColor(255, 200, 200);
+                    double totalWidth = columnWidths.Sum();
+                    gfx.DrawRectangle(statusBrush, leftMargin, yPosition - 2, totalWidth, 18);
                 }
-                table.AddCell(statusCell);
                 
+                // Draw cell contents
+                gfx.DrawString(position.ToString(), font, XBrushes.Black,
+                    new XRect(xPos + 2, yPosition, columnWidths[0] - 4, 15), XStringFormats.TopLeft);
+                xPos += columnWidths[0];
+                
+                gfx.DrawString(node.Name, font, XBrushes.Black,
+                    new XRect(xPos + 2, yPosition, columnWidths[1] - 4, 15), XStringFormats.TopLeft);
+                xPos += columnWidths[1];
+                
+                gfx.DrawString(node.DeviceData.DeviceType ?? "Fire Alarm", font, XBrushes.Black,
+                    new XRect(xPos + 2, yPosition, columnWidths[2] - 4, 15), XStringFormats.TopLeft);
+                xPos += columnWidths[2];
+                
+                gfx.DrawString($"{node.DeviceData.Current.Alarm:F3} A", font, XBrushes.Black,
+                    new XRect(xPos + 2, yPosition, columnWidths[3] - 4, 15), XStringFormats.TopLeft);
+                xPos += columnWidths[3];
+                
+                gfx.DrawString($"{node.Voltage:F1} V", font, XBrushes.Black,
+                    new XRect(xPos + 2, yPosition, columnWidths[4] - 4, 15), XStringFormats.TopLeft);
+                xPos += columnWidths[4];
+                
+                gfx.DrawString(status, font, XBrushes.Black,
+                    new XRect(xPos + 2, yPosition, columnWidths[5] - 4, 15), XStringFormats.TopLeft);
+                
+                yPosition += 18;
                 position++;
             }
             
             foreach (var child in node.Children)
             {
-                AddDevicesToPDF(table, child, ref position, font);
+                AddDevicesToPDFSharp(gfx, document, child, ref position, ref yPosition, ref page, font, columnWidths, leftMargin);
             }
         }
+
 
         private bool ExportToJSON(string filePath)
         {

@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using Autodesk.Revit.DB;
 
 namespace FireAlarmCircuitAnalysis.Views
 {
@@ -16,10 +18,14 @@ namespace FireAlarmCircuitAnalysis.Views
         private Canvas _canvas;
         private CircuitManager _circuitManager;
         private Dictionary<CircuitNode, SchematicDevice> _deviceMap;
+        private Dictionary<FrameworkElement, CircuitNode> _elementToNodeMap;
         private double _scale = 1.0;
         private double _minDeviceSpacing = 150;
         private double _branchVerticalSpacing = 120;
         private double _margin = 60;
+        
+        // Events
+        public event EventHandler<DeviceSelectedEventArgs> DeviceSelected;
         
         // Diagrammatic dimensions - reduced sizes
         private const double DeviceBoxWidth = 60;
@@ -27,28 +33,30 @@ namespace FireAlarmCircuitAnalysis.Views
         private const double WireThickness = 1.5;
         
         // Professional colors for clean diagram
-        private readonly SolidColorBrush PanelColor = new SolidColorBrush(Color.FromRgb(70, 130, 180)); // Steel Blue
-        private readonly SolidColorBrush DeviceColor = new SolidColorBrush(Color.FromRgb(100, 149, 237)); // Cornflower Blue
-        private readonly SolidColorBrush DeviceBorderColor = new SolidColorBrush(Color.FromRgb(25, 25, 112)); // Midnight Blue
+        private readonly SolidColorBrush PanelColor = new SolidColorBrush(System.Windows.Media.Color.FromRgb(70, 130, 180)); // Steel Blue
+        private readonly SolidColorBrush DeviceColor = new SolidColorBrush(System.Windows.Media.Color.FromRgb(100, 149, 237)); // Cornflower Blue
+        private readonly SolidColorBrush DeviceBorderColor = new SolidColorBrush(System.Windows.Media.Color.FromRgb(25, 25, 112)); // Midnight Blue
         private readonly SolidColorBrush WireColor = new SolidColorBrush(Colors.Black);
-        private readonly SolidColorBrush BranchWireColor = new SolidColorBrush(Color.FromRgb(255, 140, 0)); // Dark Orange
+        private readonly SolidColorBrush BranchWireColor = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 140, 0)); // Dark Orange
         private readonly SolidColorBrush BackgroundColor = new SolidColorBrush(Colors.White);
-        private readonly SolidColorBrush GridColor = new SolidColorBrush(Color.FromRgb(240, 240, 240));
+        private readonly SolidColorBrush GridColor = new SolidColorBrush(System.Windows.Media.Color.FromRgb(240, 240, 240));
         private readonly SolidColorBrush TextColor = new SolidColorBrush(Colors.Black);
-        private readonly SolidColorBrush VoltageGoodColor = new SolidColorBrush(Color.FromRgb(0, 128, 0)); // Green
-        private readonly SolidColorBrush VoltageLowColor = new SolidColorBrush(Color.FromRgb(220, 20, 60)); // Crimson
+        private readonly SolidColorBrush VoltageGoodColor = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 128, 0)); // Green
+        private readonly SolidColorBrush VoltageLowColor = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60)); // Crimson
 
         public SchematicDrawing(Canvas canvas, CircuitManager circuitManager)
         {
             _canvas = canvas;
             _circuitManager = circuitManager;
             _deviceMap = new Dictionary<CircuitNode, SchematicDevice>();
+            _elementToNodeMap = new Dictionary<FrameworkElement, CircuitNode>();
         }
 
         public void DrawSchematic()
         {
             _canvas.Children.Clear();
             _deviceMap.Clear();
+            _elementToNodeMap.Clear();
             
             if (_circuitManager?.RootNode == null) return;
             
@@ -93,7 +101,7 @@ namespace FireAlarmCircuitAnalysis.Views
             _canvas.Height = layoutInfo.TotalHeight + (2 * _margin);
             
             // Draw clean white background
-            var background = new Rectangle
+            var background = new System.Windows.Shapes.Rectangle
             {
                 Width = _canvas.Width,
                 Height = _canvas.Height,
@@ -152,7 +160,7 @@ namespace FireAlarmCircuitAnalysis.Views
             
             for (double x = 0; x < _canvas.Width; x += gridSpacing)
             {
-                var line = new Line
+                var line = new System.Windows.Shapes.Line
                 {
                     X1 = x,
                     Y1 = 0,
@@ -167,7 +175,7 @@ namespace FireAlarmCircuitAnalysis.Views
             
             for (double y = 0; y < _canvas.Height; y += gridSpacing)
             {
-                var line = new Line
+                var line = new System.Windows.Shapes.Line
                 {
                     X1 = 0,
                     Y1 = y,
@@ -241,7 +249,7 @@ namespace FireAlarmCircuitAnalysis.Views
             itemY += 30;
             
             // Wire legend
-            var wire = new Line
+            var wire = new System.Windows.Shapes.Line
             {
                 X1 = legendX + 15,
                 Y1 = itemY + 10,
@@ -411,7 +419,7 @@ namespace FireAlarmCircuitAnalysis.Views
             double fromWidth = from.IsPanel ? DeviceBoxWidth * 1.5 : DeviceBoxWidth;
             double toWidth = to.IsPanel ? DeviceBoxWidth * 1.5 : DeviceBoxWidth;
             
-            var line = new Line
+            var line = new System.Windows.Shapes.Line
             {
                 X1 = from.X + (fromWidth * _scale / 2),
                 Y1 = from.Y,
@@ -431,7 +439,7 @@ namespace FireAlarmCircuitAnalysis.Views
             double branchY = branchDevice.Y;
             
             // Vertical line down from main device
-            var vertLine = new Line
+            var vertLine = new System.Windows.Shapes.Line
             {
                 X1 = tapX,
                 Y1 = tapY,
@@ -443,7 +451,7 @@ namespace FireAlarmCircuitAnalysis.Views
             _canvas.Children.Add(vertLine);
             
             // Horizontal line to branch device
-            var horizLine = new Line
+            var horizLine = new System.Windows.Shapes.Line
             {
                 X1 = tapX,
                 Y1 = branchY,
@@ -455,7 +463,7 @@ namespace FireAlarmCircuitAnalysis.Views
             _canvas.Children.Add(horizLine);
             
             // T-tap indicator - small square junction
-            var tapIndicator = new Rectangle
+            var tapIndicator = new System.Windows.Shapes.Rectangle
             {
                 Width = 6 * _scale,
                 Height = 6 * _scale,
@@ -485,7 +493,7 @@ namespace FireAlarmCircuitAnalysis.Views
                     string deviceAbbrev = GetDeviceAbbreviation(node);
                     
                     // Draw clean diagrammatic device box
-                    DrawDiagrammaticDevice(device.X, device.Y, DeviceBoxWidth, DeviceBoxHeight, deviceAbbrev);
+                    DrawDiagrammaticDevice(device.X, device.Y, DeviceBoxWidth, DeviceBoxHeight, deviceAbbrev, node);
                     
                     // Add voltage indicator
                     AddVoltageIndicator(device, node);
@@ -528,7 +536,7 @@ namespace FireAlarmCircuitAnalysis.Views
         private void DrawDiagrammaticPanel(double x, double y, double width, double height)
         {
             // Panel box with rounded corners
-            var rect = new Rectangle
+            var rect = new System.Windows.Shapes.Rectangle
             {
                 Width = width * _scale,
                 Height = height * _scale,
@@ -556,10 +564,10 @@ namespace FireAlarmCircuitAnalysis.Views
             _canvas.Children.Add(text);
         }
 
-        private void DrawDiagrammaticDevice(double x, double y, double width, double height, string abbreviation)
+        private void DrawDiagrammaticDevice(double x, double y, double width, double height, string abbreviation, CircuitNode node = null)
         {
             // Device box with clean rectangular shape
-            var rect = new Rectangle
+            var rect = new System.Windows.Shapes.Rectangle
             {
                 Width = width * _scale,
                 Height = height * _scale,
@@ -567,8 +575,22 @@ namespace FireAlarmCircuitAnalysis.Views
                 Stroke = DeviceBorderColor,
                 StrokeThickness = 1.5 * _scale,
                 RadiusX = 2 * _scale,
-                RadiusY = 2 * _scale
+                RadiusY = 2 * _scale,
+                Cursor = node != null ? Cursors.Hand : Cursors.Arrow
             };
+            
+            // Make clickable if node provided
+            if (node != null)
+            {
+                rect.MouseLeftButtonDown += (s, e) => OnDeviceClicked(node);
+                rect.MouseEnter += (s, e) => rect.Opacity = 0.8;
+                rect.MouseLeave += (s, e) => rect.Opacity = 1.0;
+                _elementToNodeMap[rect] = node;
+                
+                // Add tooltip with device info
+                rect.ToolTip = CreateDeviceTooltip(node);
+            }
+            
             Canvas.SetLeft(rect, x - (width * _scale / 2));
             Canvas.SetTop(rect, y - (height * _scale / 2));
             _canvas.Children.Add(rect);
@@ -602,7 +624,7 @@ namespace FireAlarmCircuitAnalysis.Views
                 Foreground = color,
                 FontSize = 8 * _scale,
                 FontWeight = FontWeights.Bold,
-                Background = new SolidColorBrush(Color.FromArgb(230, 255, 255, 255)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(230, 255, 255, 255)),
                 Padding = new Thickness(2, 1, 2, 1)
             };
             Canvas.SetLeft(voltageText, device.X - (12 * _scale));
@@ -621,10 +643,10 @@ namespace FireAlarmCircuitAnalysis.Views
             var distanceText = new TextBlock
             {
                 Text = $"{distance:F0}'",
-                Foreground = new SolidColorBrush(Color.FromRgb(80, 80, 80)),
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(80, 80, 80)),
                 FontSize = 8 * _scale,
                 FontWeight = FontWeights.Normal,
-                Background = new SolidColorBrush(Color.FromArgb(240, 255, 255, 255)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(240, 255, 255, 255)),
                 Padding = new Thickness(2, 1, 2, 1)
             };
             
@@ -664,12 +686,28 @@ namespace FireAlarmCircuitAnalysis.Views
                     Canvas.SetTop(nameText, device.Y + (DeviceBoxHeight / 2 * _scale) + (5 * _scale));
                     _canvas.Children.Add(nameText);
                     
+                    // Element ID label - positioned below current
+                    if (node.ElementId != null && node.ElementId != ElementId.InvalidElementId)
+                    {
+                        var idText = new TextBlock
+                        {
+                            Text = $"ID: {node.ElementId.IntegerValue}",
+                            FontSize = 6 * _scale,
+                            Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(100, 100, 100)),
+                            TextAlignment = TextAlignment.Center,
+                            FontStyle = FontStyles.Italic
+                        };
+                        Canvas.SetLeft(idText, device.X - (20 * _scale));
+                        Canvas.SetTop(idText, device.Y + (DeviceBoxHeight / 2 * _scale) + (35 * _scale));
+                        _canvas.Children.Add(idText);
+                    }
+                    
                     // Current consumption label - smaller, positioned below name
                     var currentText = new TextBlock
                     {
                         Text = $"{node.DeviceData.Current.Alarm:F2}A",
                         FontSize = 7 * _scale,
-                        Foreground = new SolidColorBrush(Color.FromRgb(128, 128, 128)),
+                        Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(128, 128, 128)),
                         TextAlignment = TextAlignment.Center
                     };
                     Canvas.SetLeft(currentText, device.X - (12 * _scale));
@@ -782,11 +820,11 @@ namespace FireAlarmCircuitAnalysis.Views
         private void DrawFQQHeader()
         {
             // Circuit title box
-            var titleBox = new Rectangle
+            var titleBox = new System.Windows.Shapes.Rectangle
             {
                 Width = _canvas.Width - (2 * _margin),
                 Height = 60 * _scale,
-                Fill = new SolidColorBrush(Color.FromRgb(240, 240, 240)),
+                Fill = new SolidColorBrush(System.Windows.Media.Color.FromRgb(240, 240, 240)),
                 Stroke = Brushes.Black,
                 StrokeThickness = 2
             };
@@ -890,7 +928,7 @@ namespace FireAlarmCircuitAnalysis.Views
             double endX = _deviceMap.Values.Where(d => d.IsMainCircuit).Max(d => d.X) + 70;
             
             // Draw main horizontal line
-            var mainLine = new Line
+            var mainLine = new System.Windows.Shapes.Line
             {
                 X1 = startX,
                 Y1 = mainY,
@@ -974,9 +1012,9 @@ namespace FireAlarmCircuitAnalysis.Views
             {
                 Points = new PointCollection
                 {
-                    new Point(x - 15 * _scale, y - 10 * _scale),
-                    new Point(x + 15 * _scale, y),
-                    new Point(x - 15 * _scale, y + 10 * _scale)
+                    new System.Windows.Point(x - 15 * _scale, y - 10 * _scale),
+                    new System.Windows.Point(x + 15 * _scale, y),
+                    new System.Windows.Point(x - 15 * _scale, y + 10 * _scale)
                 },
                 Fill = Brushes.Black,
                 Stroke = Brushes.Black,
@@ -1002,7 +1040,7 @@ namespace FireAlarmCircuitAnalysis.Views
             DrawFQQHornIcon(x - 10 * _scale, y, false);
             
             // Strobe circle
-            var strobe = new Ellipse
+            var strobe = new System.Windows.Shapes.Ellipse
             {
                 Width = 12 * _scale,
                 Height = 12 * _scale,
@@ -1029,7 +1067,7 @@ namespace FireAlarmCircuitAnalysis.Views
         private void DrawFQQStrobeIcon(double x, double y)
         {
             // Strobe circle with flash lines
-            var strobe = new Ellipse
+            var strobe = new System.Windows.Shapes.Ellipse
             {
                 Width = 20 * _scale,
                 Height = 20 * _scale,
@@ -1055,11 +1093,11 @@ namespace FireAlarmCircuitAnalysis.Views
         private void DrawFQQSpeakerIcon(double x, double y)
         {
             // Speaker cone shape
-            var speaker = new Rectangle
+            var speaker = new System.Windows.Shapes.Rectangle
             {
                 Width = 16 * _scale,
                 Height = 16 * _scale,
-                Fill = new SolidColorBrush(Color.FromRgb(200, 200, 255)),
+                Fill = new SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 255)),
                 Stroke = Brushes.Black,
                 StrokeThickness = 2 * _scale
             };
@@ -1080,7 +1118,7 @@ namespace FireAlarmCircuitAnalysis.Views
         
         private void DrawFQQGenericIcon(double x, double y)
         {
-            var generic = new Ellipse
+            var generic = new System.Windows.Shapes.Ellipse
             {
                 Width = 16 * _scale,
                 Height = 16 * _scale,
@@ -1119,7 +1157,7 @@ namespace FireAlarmCircuitAnalysis.Views
             _canvas.Children.Add(tapSymbol);
             
             // Vertical line down
-            var vertLine = new Line
+            var vertLine = new System.Windows.Shapes.Line
             {
                 X1 = tapDevice.X,
                 Y1 = mainY,
@@ -1132,7 +1170,7 @@ namespace FireAlarmCircuitAnalysis.Views
             _canvas.Children.Add(vertLine);
             
             // Horizontal line to device
-            var horizLine = new Line
+            var horizLine = new System.Windows.Shapes.Line
             {
                 X1 = tapDevice.X,
                 Y1 = branchDevice.Y,
@@ -1208,11 +1246,11 @@ namespace FireAlarmCircuitAnalysis.Views
             double boxY = _canvas.Height - 150;
             
             // Summary box
-            var summaryBox = new Rectangle
+            var summaryBox = new System.Windows.Shapes.Rectangle
             {
                 Width = 280,
                 Height = 120,
-                Fill = new SolidColorBrush(Color.FromRgb(245, 245, 245)),
+                Fill = new SolidColorBrush(System.Windows.Media.Color.FromRgb(245, 245, 245)),
                 Stroke = Brushes.Black,
                 StrokeThickness = 2
             };
@@ -1258,11 +1296,11 @@ namespace FireAlarmCircuitAnalysis.Views
             double legendY = _canvas.Height - 150;
             
             // Legend box
-            var legendBox = new Rectangle
+            var legendBox = new System.Windows.Shapes.Rectangle
             {
                 Width = 200,
                 Height = 120,
-                Fill = new SolidColorBrush(Color.FromRgb(250, 250, 250)),
+                Fill = new SolidColorBrush(System.Windows.Media.Color.FromRgb(250, 250, 250)),
                 Stroke = Brushes.Black,
                 StrokeThickness = 1
             };
@@ -1305,7 +1343,7 @@ namespace FireAlarmCircuitAnalysis.Views
             Canvas.SetTop(startText, y - 20);
             _canvas.Children.Add(startText);
             
-            var startSymbol = new Ellipse
+            var startSymbol = new System.Windows.Shapes.Ellipse
             {
                 Width = 8,
                 Height = 8,
@@ -1328,7 +1366,7 @@ namespace FireAlarmCircuitAnalysis.Views
             Canvas.SetTop(eolText, y - 20);
             _canvas.Children.Add(eolText);
             
-            var eolSymbol = new Rectangle
+            var eolSymbol = new System.Windows.Shapes.Rectangle
             {
                 Width = 8,
                 Height = 8,
@@ -1481,7 +1519,7 @@ namespace FireAlarmCircuitAnalysis.Views
             
             if (firstDevice != null && lastDevice != null)
             {
-                var mainLine = new Line
+                var mainLine = new System.Windows.Shapes.Line
                 {
                     X1 = _margin + 100,
                     Y1 = mainY,
@@ -1500,7 +1538,7 @@ namespace FireAlarmCircuitAnalysis.Views
                 if (!device.IsPanel)
                 {
                     // Drop line to device
-                    var dropLine = new Line
+                    var dropLine = new System.Windows.Shapes.Line
                     {
                         X1 = device.X,
                         Y1 = mainY,
@@ -1538,11 +1576,11 @@ namespace FireAlarmCircuitAnalysis.Views
                 if (device.IsPanel)
                 {
                     // Draw FACP box
-                    var panel = new Rectangle
+                    var panel = new System.Windows.Shapes.Rectangle
                     {
                         Width = 80 * _scale,
                         Height = 60 * _scale,
-                        Fill = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+                        Fill = new SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 200)),
                         Stroke = new SolidColorBrush(Colors.Black),
                         StrokeThickness = 2 * _scale
                     };
@@ -1563,13 +1601,13 @@ namespace FireAlarmCircuitAnalysis.Views
                 else if (node.DeviceData != null)
                 {
                     // Draw device symbol - simple circle for IDNAC style
-                    var deviceCircle = new Ellipse
+                    var deviceCircle = new System.Windows.Shapes.Ellipse
                     {
                         Width = 40 * _scale,
                         Height = 40 * _scale,
                         Fill = device.IsBranch ? 
-                            new SolidColorBrush(Color.FromRgb(255, 200, 150)) : 
-                            new SolidColorBrush(Color.FromRgb(200, 200, 255)),
+                            new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 200, 150)) : 
+                            new SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 255)),
                         Stroke = new SolidColorBrush(Colors.Black),
                         StrokeThickness = 2 * _scale
                     };
@@ -1673,5 +1711,63 @@ namespace FireAlarmCircuitAnalysis.Views
             public double TotalWidth { get; set; }
             public double TotalHeight { get; set; }
         }
+        
+        // Event handling
+        private void OnDeviceClicked(CircuitNode node)
+        {
+            DeviceSelected?.Invoke(this, new DeviceSelectedEventArgs { Node = node });
+        }
+        
+        private object CreateDeviceTooltip(CircuitNode node)
+        {
+            var tooltip = new StackPanel { Margin = new Thickness(5) };
+            
+            tooltip.Children.Add(new TextBlock 
+            { 
+                Text = node.Name, 
+                FontWeight = FontWeights.Bold,
+                FontSize = 12
+            });
+            
+            if (node.ElementId != null && node.ElementId != ElementId.InvalidElementId)
+            {
+                tooltip.Children.Add(new TextBlock 
+                { 
+                    Text = $"Element ID: {node.ElementId.IntegerValue}",
+                    FontSize = 10,
+                    Foreground = new SolidColorBrush(Colors.Gray)
+                });
+            }
+            
+            if (node.DeviceData != null)
+            {
+                tooltip.Children.Add(new TextBlock 
+                { 
+                    Text = $"Type: {node.DeviceData.DeviceType}",
+                    FontSize = 10
+                });
+                
+                tooltip.Children.Add(new TextBlock 
+                { 
+                    Text = $"Current: {node.DeviceData.Current.Alarm:F3}A",
+                    FontSize = 10
+                });
+                
+                tooltip.Children.Add(new TextBlock 
+                { 
+                    Text = $"Voltage: {node.Voltage:F1}V",
+                    FontSize = 10,
+                    Foreground = node.Voltage < 16 ? Brushes.Red : Brushes.Green
+                });
+            }
+            
+            return tooltip;
+        }
+    }
+    
+    // Event args for device selection
+    public class DeviceSelectedEventArgs : EventArgs
+    {
+        public CircuitNode Node { get; set; }
     }
 }

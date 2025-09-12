@@ -29,6 +29,7 @@ xcopy "%OUTPUT_PATH%\NPOI.OpenXml4Net.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysi
 xcopy "%OUTPUT_PATH%\NPOI.OpenXmlFormats.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
 xcopy "%OUTPUT_PATH%\ICSharpCode.SharpZipLib.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
 xcopy "%OUTPUT_PATH%\NLog.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
+xcopy "%OUTPUT_PATH%\PdfSharp.dll" "%ADDIN_PATH%\FireAlarmCircuitAnalysis\" /Y
 xcopy "%OUTPUT_PATH%\FireAlarmCircuitAnalysis.addin" "%ADDIN_PATH%\" /Y
 
 echo Deployment complete!
