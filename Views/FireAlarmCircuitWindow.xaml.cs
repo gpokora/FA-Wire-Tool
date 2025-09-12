@@ -23,6 +23,7 @@ namespace FireAlarmCircuitAnalysis.Views
         public CircuitManager circuitManager;
         private DispatcherTimer updateTimer;
         private SchematicDrawing schematicDrawing;
+        private bool isEditMode = false;
         public bool isSelecting = false;
         public SelectionEventHandler selectionHandler;
         public ExternalEvent selectionEvent;
@@ -44,6 +45,8 @@ namespace FireAlarmCircuitAnalysis.Views
         private ExternalEvent zoomToDeviceEvent;
         private SelectDeviceEventHandler selectDeviceHandler;
         private ExternalEvent selectDeviceEvent;
+        private EditCircuitEventHandler editCircuitHandler;
+        private ExternalEvent editCircuitEvent;
 
         // Wire resistance values (ohms per 1000 ft - SINGLE CONDUCTOR)
         private readonly Dictionary<string, double> WIRE_RESISTANCE = new Dictionary<string, double>
@@ -67,7 +70,8 @@ namespace FireAlarmCircuitAnalysis.Views
             RemoveDeviceEventHandler removeDeviceHandler, ExternalEvent removeDeviceEvent,
             ClearCircuitEventHandler clearCircuitHandler, ExternalEvent clearCircuitEvent,
             ClearOverridesEventHandler clearOverridesHandler, ExternalEvent clearOverridesEvent,
-            InitializationEventHandler initializationHandler, ExternalEvent initializationEvent)
+            InitializationEventHandler initializationHandler, ExternalEvent initializationEvent,
+            EditCircuitEventHandler editCircuitHandler = null, ExternalEvent editCircuitEvent = null)
         {
             InitializeComponent();
 
@@ -86,6 +90,8 @@ namespace FireAlarmCircuitAnalysis.Views
             this.clearOverridesEvent = clearOverridesEvent;
             this.initializationHandler = initializationHandler;
             this.initializationEvent = initializationEvent;
+            this.editCircuitHandler = editCircuitHandler;
+            this.editCircuitEvent = editCircuitEvent;
 
             // Set window references in handlers
             selectionHandler.Window = this;
@@ -95,6 +101,8 @@ namespace FireAlarmCircuitAnalysis.Views
             clearCircuitHandler.Window = this;
             clearOverridesHandler.Window = this;
             initializationHandler.Window = this;
+            if (editCircuitHandler != null)
+                editCircuitHandler.Window = this;
             
             // Create zoom and select event handlers
             zoomToDeviceHandler = new ZoomToDeviceEventHandler();
@@ -319,8 +327,13 @@ namespace FireAlarmCircuitAnalysis.Views
             {
                 if (isSelecting)
                 {
-                    // Stop selection
-                    EndSelection();
+                    // Inform user to press ESC to stop selection
+                    lblStatusMessage.Text = "Press ESC or Right-click in the model to stop selection";
+                    TaskDialog.Show("Stop Selection", 
+                        "To stop selection mode:\n\n" +
+                        "• Press ESC key\n" +
+                        "• Right-click in the model\n\n" +
+                        "The selection tool is waiting for your input in Revit.");
                     return;
                 }
 
@@ -349,8 +362,8 @@ namespace FireAlarmCircuitAnalysis.Views
 
                 // Update UI for selection mode
                 lblMode.Text = "SELECTING";
-                lblStatusMessage.Text = "Click devices to add. SHIFT+Click existing device for T-tap. ESC to finish.";
-                btnStartSelection.Content = "STOP SELECTION";
+                lblStatusMessage.Text = "Click devices to add. SHIFT+Click existing device for T-tap. ESC or Right-click to finish.";
+                btnStartSelection.Content = "SELECTING (ESC to stop)";
                 btnStartSelection.IsEnabled = true;
                 isSelecting = true;
 
@@ -390,6 +403,18 @@ namespace FireAlarmCircuitAnalysis.Views
             if (selectionHandler != null)
                 selectionHandler.IsSelecting = false;
 
+            // Clear visual overrides
+            if (clearOverridesEvent != null && circuitManager?.OriginalOverrides?.Count > 0)
+            {
+                clearOverridesEvent.Raise();
+            }
+            
+            // End edit mode if active
+            if (isEditMode)
+            {
+                EndEditMode();
+            }
+
             // Update UI
             lblMode.Text = "READY";
             lblStatusMessage.Text = "Selection complete. Ready to create wires.";
@@ -412,6 +437,7 @@ namespace FireAlarmCircuitAnalysis.Views
                 btnSaveCircuit.IsEnabled = circuitManager.RootNode != null && circuitManager.RootNode.HasChildren;
                 btnValidate.IsEnabled = circuitManager.RootNode != null && circuitManager.RootNode.HasChildren;
                 btnExport.IsEnabled = circuitManager.RootNode != null && circuitManager.RootNode.HasChildren;
+                btnEditCircuit.IsEnabled = circuitManager.RootNode != null && circuitManager.RootNode.HasChildren && !isSelecting && editCircuitEvent != null;
             }
 
             // Stop update timer
@@ -567,20 +593,29 @@ namespace FireAlarmCircuitAnalysis.Views
 
         private void UpdateDeviceGrid()
         {
-            if (circuitManager?.RootNode == null)
+            try
             {
-                dgDevices.ItemsSource = null;
-                return;
-            }
+                if (circuitManager?.RootNode == null)
+                {
+                    dgDevices.ItemsSource = null;
+                    return;
+                }
 
-            var devices = new ObservableCollection<DeviceListItem>();
-            BuildDeviceList(circuitManager.RootNode, devices, "");
-            dgDevices.ItemsSource = devices;
+                var devices = new ObservableCollection<DeviceListItem>();
+                BuildDeviceList(circuitManager.RootNode, devices, "");
+                dgDevices.ItemsSource = devices;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"UpdateDeviceGrid error: {ex.Message}");
+                dgDevices.ItemsSource = null;
+                MessageBox.Show($"Error updating device list: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
 
         private void BuildDeviceList(CircuitNode node, ObservableCollection<DeviceListItem> devices, string prefix)
         {
-            if (node.NodeType == "Device" && node.DeviceData != null)
+            if (node?.NodeType == "Device" && node.DeviceData?.Current != null)
             {
                 var status = node.Status ?? (node.Voltage >= circuitManager.Parameters.MinVoltage ? "✓" : "✗");
 
@@ -596,10 +631,10 @@ namespace FireAlarmCircuitAnalysis.Views
                 {
                     // Main row properties
                     Position = node.SequenceNumber > 0 ? node.SequenceNumber.ToString() : devices.Count.ToString(),
-                    Name = prefix + node.Name,
+                    Name = prefix + (node.Name ?? "Unknown Device"),
                     Current = $"{node.DeviceData.Current.Alarm:F3}A",
                     Voltage = $"{node.Voltage:F1}V",
-                    Status = status,
+                    Status = status ?? "N/A",
                     
                     // Detail properties
                     ElementId = node.ElementId?.IntegerValue.ToString() ?? "N/A",
@@ -611,7 +646,7 @@ namespace FireAlarmCircuitAnalysis.Views
                     SupervisionCurrent = $"{node.DeviceData.Current.Standby:F3}",
                     TroubleCurrent = $"{node.DeviceData.Current.Alarm:F3}",
                     WireLength = $"{totalWireLength:F1}",
-                    CircuitPath = GetCircuitPath(node),
+                    CircuitPath = GetCircuitPath(node) ?? "N/A",
                     IsBranchDevice = node.IsBranchDevice ? "Yes" : "No",
                     
                     // Reference to original node
@@ -619,16 +654,22 @@ namespace FireAlarmCircuitAnalysis.Views
                 });
             }
 
-            foreach (var child in node.Children)
+            if (node.Children != null)
             {
-                string childPrefix = prefix;
-                if (child.IsBranchDevice)
+                foreach (var child in node.Children)
                 {
-                    // Branch device - indent to show it's a child
-                    childPrefix = "  └─ ";
-                }
+                    if (child != null)
+                    {
+                        string childPrefix = prefix;
+                        if (child.IsBranchDevice)
+                        {
+                            // Branch device - indent to show it's a child
+                            childPrefix = "  └─ ";
+                        }
 
-                BuildDeviceList(child, devices, childPrefix);
+                        BuildDeviceList(child, devices, childPrefix);
+                    }
+                }
             }
         }
         
@@ -913,6 +954,58 @@ namespace FireAlarmCircuitAnalysis.Views
             }
         }
 
+        private void BtnEditCircuit_Click(object sender, RoutedEventArgs e)
+        {
+            if (circuitManager == null || editCircuitEvent == null) return;
+
+            if (isEditMode)
+            {
+                // Exit edit mode
+                EndEditMode();
+            }
+            else
+            {
+                // Enter edit mode
+                StartEditMode();
+            }
+        }
+
+        private void StartEditMode()
+        {
+            isEditMode = true;
+            btnEditCircuit.Content = "EXIT EDIT MODE";
+            btnEditCircuit.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(231, 76, 60)); // Red
+            lblMode.Text = "EDIT MODE";
+            lblStatusMessage.Text = "Circuit devices highlighted. Click devices to modify circuit.";
+            
+            // Disable other operations during edit
+            btnStartSelection.IsEnabled = false;
+            btnCreateWires.IsEnabled = false;
+            btnClearCircuit.IsEnabled = false;
+            
+            // Raise event to apply visual overrides
+            editCircuitHandler.IsEnteringEditMode = true;
+            editCircuitEvent.Raise();
+        }
+
+        private void EndEditMode()
+        {
+            isEditMode = false;
+            btnEditCircuit.Content = "Edit Circuit";
+            btnEditCircuit.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(52, 152, 219)); // Blue
+            lblMode.Text = "READY";
+            lblStatusMessage.Text = "Edit mode ended. Circuit modifications saved.";
+            
+            // Re-enable operations
+            btnStartSelection.IsEnabled = true;
+            btnCreateWires.IsEnabled = circuitManager.MainCircuit.Count > 1 || circuitManager.Branches.Count > 0;
+            btnClearCircuit.IsEnabled = true;
+            
+            // Raise event to remove visual overrides
+            editCircuitHandler.IsEnteringEditMode = false;
+            editCircuitEvent.Raise();
+        }
+
         private void BtnClearCircuit_Click(object sender, RoutedEventArgs e)
         {
             var result = TaskDialog.Show("Clear Circuit",
@@ -921,6 +1014,12 @@ namespace FireAlarmCircuitAnalysis.Views
 
             if (result == TaskDialogResult.Yes)
             {
+                // Exit edit mode if active
+                if (isEditMode)
+                {
+                    EndEditMode();
+                }
+                
                 if (circuitManager != null && circuitManager.OriginalOverrides.Count > 0)
                 {
                     lblStatusMessage.Text = "Clearing circuit...";
@@ -1062,6 +1161,26 @@ namespace FireAlarmCircuitAnalysis.Views
             {
                 string message = "Circuit validation failed:\n\n" + string.Join("\n", errors);
                 TaskDialog.Show("Validation Errors", message);
+            }
+        }
+
+        private void BtnSettings_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var settingsWindow = new SettingsWindow();
+                settingsWindow.Owner = this;
+                bool? result = settingsWindow.ShowDialog();
+                
+                if (result == true)
+                {
+                    // Settings were saved, could reload any cached settings if needed
+                    lblStatusMessage.Text = "Settings updated.";
+                }
+            }
+            catch (Exception ex)
+            {
+                TaskDialog.Show("Settings Error", $"Failed to open settings: {ex.Message}");
             }
         }
 
@@ -1544,16 +1663,24 @@ namespace FireAlarmCircuitAnalysis.Views
         /// </summary>
         private void ExpanderButton_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.DataContext is DeviceListItem item)
+            try
             {
-                item.IsExpanded = !item.IsExpanded;
-                
-                // Force DataGrid to refresh row details
-                var row = dgDevices.ItemContainerGenerator.ContainerFromItem(item) as DataGridRow;
-                if (row != null)
+                if (sender is Button button && button.DataContext is DeviceListItem item)
                 {
-                    row.DetailsVisibility = item.IsExpanded ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    item.IsExpanded = !item.IsExpanded;
+                    
+                    // Force DataGrid to refresh row details
+                    var row = dgDevices.ItemContainerGenerator.ContainerFromItem(item) as DataGridRow;
+                    if (row != null)
+                    {
+                        row.DetailsVisibility = item.IsExpanded ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ExpanderButton_Click error: {ex.Message}");
+                MessageBox.Show($"Error expanding details: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 

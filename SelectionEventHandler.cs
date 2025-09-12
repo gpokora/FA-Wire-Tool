@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows.Input;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Electrical;
@@ -134,11 +135,12 @@ namespace FireAlarmCircuitAnalysis
                 var activeView = app.ActiveUIDocument.ActiveView;
                 var circuitManager = Window.circuitManager;
 
-                // Check if device already exists in circuit
-                bool deviceExists = circuitManager.DeviceData.ContainsKey(elementId);
+                // Check if device already exists in circuit (in MainCircuit or any Branch)
+                bool deviceExists = circuitManager.MainCircuit.Contains(elementId) || 
+                                  circuitManager.Branches.Any(b => b.Value.Contains(elementId));
 
                 // Handle Shift+Click for T-tap creation
-                if (shiftPressed && deviceExists && circuitManager.Mode == "main")
+                if (shiftPressed && circuitManager.DeviceData.ContainsKey(elementId) && circuitManager.Mode == "main")
                 {
                     // Create T-tap branch from existing device
                     if (circuitManager.StartBranchFromDevice(elementId))
@@ -223,12 +225,13 @@ namespace FireAlarmCircuitAnalysis
                         var overrideSettings = new OverrideGraphicSettings();
                         if (circuitManager.Mode == "main")
                         {
+                            overrideSettings.SetProjectionLineColor(new Color(0, 255, 0)); // Green color for main branch
                             overrideSettings.SetHalftone(true);
                             circuitManager.AddDeviceToMain(elementId, deviceData);
                         }
                         else // branch mode
                         {
-                            overrideSettings.SetProjectionLineColor(new Color(255, 128, 0));
+                            overrideSettings.SetProjectionLineColor(new Color(255, 128, 0)); // Orange color for T-tap
                             overrideSettings.SetHalftone(true);
                             circuitManager.AddDeviceToBranch(elementId, deviceData);
                         }

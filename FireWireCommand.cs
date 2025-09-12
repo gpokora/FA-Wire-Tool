@@ -138,6 +138,9 @@ namespace FireAlarmCircuitAnalysis
                     
                     var initializationHandler = new InitializationEventHandler();
                     var initializationEvent = ExternalEvent.Create(initializationHandler);
+                    
+                    var editCircuitHandler = new EditCircuitEventHandler();
+                    var editCircuitEvent = ExternalEvent.Create(editCircuitHandler);
 
                     // Open the WPF window as modeless and pass the events
                     var window = new Views.FireAlarmCircuitWindow(
@@ -147,7 +150,8 @@ namespace FireAlarmCircuitAnalysis
                         removeDeviceHandler, removeDeviceEvent,
                         clearCircuitHandler, clearCircuitEvent,
                         clearOverridesHandler, clearOverridesEvent,
-                        initializationHandler, initializationEvent);
+                        initializationHandler, initializationEvent,
+                        editCircuitHandler, editCircuitEvent);
                     window.Show();  // Use Show() instead of ShowDialog() for modeless
 
                     return Result.Succeeded;

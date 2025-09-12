@@ -26,6 +26,7 @@ namespace FireAlarmCircuitAnalysis
                 try
                 {
                     SelectedOverride = new OverrideGraphicSettings();
+                    SelectedOverride.SetProjectionLineColor(new Color(0, 255, 0)); // Green color for main branch
                     SelectedOverride.SetHalftone(true);
                 }
                 catch (Exception ex)
@@ -37,7 +38,7 @@ namespace FireAlarmCircuitAnalysis
                 try
                 {
                     BranchOverride = new OverrideGraphicSettings();
-                    BranchOverride.SetProjectionLineColor(new Color(255, 128, 0));
+                    BranchOverride.SetProjectionLineColor(new Color(255, 128, 0)); // Orange color for T-tap devices
                     BranchOverride.SetHalftone(true);
                 }
                 catch (Exception ex)

@@ -52,6 +52,7 @@
                                     <RowDefinition Height="30"/>
                                     <RowDefinition Height="30"/>
                                     <RowDefinition Height="30"/>
+                                    <RowDefinition Height="30"/>
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="System Voltage:" 
@@ -98,6 +99,14 @@
                                           VerticalAlignment="Center"/>
                                 <TextBox Grid.Row="6" Grid.Column="1" Name="txtRoutingOverhead" 
                                         Text="15"/>
+
+                                <TextBlock Grid.Row="7" Grid.Column="0" Text="Zoom Padding (ft):" 
+                                          VerticalAlignment="Center"/>
+                                <TextBox Grid.Row="7" Grid.Column="1" Name="txtZoomPadding" 
+                                        Text="10" ToolTip="Extra space around device when zooming (in feet)"/>
+                                <TextBlock Grid.Row="7" Grid.Column="2" Text="Controls extra space shown around devices when zooming" 
+                                          VerticalAlignment="Center" FontStyle="Italic" 
+                                          Foreground="#666" FontSize="11" Margin="10,0,0,0"/>
                             </Grid>
                         </GroupBox>
 

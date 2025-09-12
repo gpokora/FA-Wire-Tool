@@ -224,6 +224,7 @@ namespace FireAlarmCircuitAnalysis
         public bool ShowStatusBar { get; set; }
         public int TreeViewFontSize { get; set; }
         public int GridFontSize { get; set; }
+        public double ZoomPadding { get; set; } = 10.0; // Default 10 feet padding
     }
 
     public class ValidationSettings

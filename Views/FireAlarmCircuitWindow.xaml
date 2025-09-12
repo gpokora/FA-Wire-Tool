@@ -4,7 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="Fire Alarm Circuit Analysis" 
+        Title="Circuit Builder" 
         Height="850" Width="1400"
         WindowStartupLocation="CenterScreen"
         Background="#F5F6FA">
@@ -288,8 +288,7 @@
                             <DataGrid.RowDetailsTemplate>
                                 <DataTemplate>
                                     <Border Background="#F8F9FA" Padding="10" Margin="5,0,5,5"
-                                           BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="3"
-                                           Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                           BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="3">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -428,6 +427,14 @@
                             <Button Content="Remove Selected" Margin="2" Padding="8,3"
                                    Click="BtnRemoveDevice_Click" IsEnabled="False" Name="btnRemoveDevice"
                                    ToolTip="Remove selected device"/>
+                            <Separator Background="#BDC3C7" Width="1" Margin="5,2"/>
+                            <Button Content="Edit Circuit" Margin="2" Padding="8,3"
+                                   Click="BtnEditCircuit_Click" IsEnabled="False" Name="btnEditCircuit"
+                                   ToolTip="Edit existing circuit - highlights devices and allows modifications"
+                                   Background="#3498DB" Foreground="White"/>
+                            <Button Content="Settings" Margin="2" Padding="8,3"
+                                   Click="BtnSettings_Click" Name="btnSettings"
+                                   ToolTip="Configure application settings including zoom padding"/>
                         </StackPanel>
                     </Border>
                 </Grid>

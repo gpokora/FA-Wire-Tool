@@ -33,6 +33,7 @@ namespace FireAlarmCircuitAnalysis
             txtDefaultReserved.Text = defaults.ReservedPercent.ToString();
             txtDefaultSupplyDistance.Text = defaults.SupplyDistance.ToString("F1");
             txtRoutingOverhead.Text = ((defaults.RoutingOverhead - 1.0) * 100).ToString("F0");
+            txtZoomPadding.Text = configManager.Config.UI.ZoomPadding.ToString("F1");
             
             // Load wire gauge
             for (int i = 0; i < cmbDefaultWireGauge.Items.Count; i++)
@@ -60,6 +61,7 @@ namespace FireAlarmCircuitAnalysis
                 defaults.ReservedPercent = int.Parse(txtDefaultReserved.Text);
                 defaults.SupplyDistance = double.Parse(txtDefaultSupplyDistance.Text);
                 defaults.RoutingOverhead = 1.0 + (double.Parse(txtRoutingOverhead.Text) / 100.0);
+                configManager.Config.UI.ZoomPadding = double.Parse(txtZoomPadding.Text);
                 
                 // Save wire gauge
                 var selectedWireGauge = (cmbDefaultWireGauge.SelectedItem as ComboBoxItem)?.Content.ToString();
@@ -105,6 +107,7 @@ namespace FireAlarmCircuitAnalysis
                 txtDefaultReserved.Text = "20";
                 txtDefaultSupplyDistance.Text = "50.0";
                 txtRoutingOverhead.Text = "15";
+                txtZoomPadding.Text = "10.0";
                 cmbDefaultWireGauge.SelectedIndex = 1; // 16 AWG
             }
         }

@@ -137,6 +137,7 @@ namespace FireAlarmCircuitAnalysis
                             if (wire != null)
                             {
                                 successCount++;
+                                circuitManager.CreatedWires.Add(wire.Id);
                             }
                         }
                     }
@@ -181,6 +182,7 @@ namespace FireAlarmCircuitAnalysis
                             if (wire != null)
                             {
                                 successCount++;
+                                circuitManager.CreatedWires.Add(wire.Id);
                             }
                         }
                     }
@@ -218,6 +220,7 @@ namespace FireAlarmCircuitAnalysis
                                 if (wire != null)
                                 {
                                     successCount++;
+                                    circuitManager.CreatedWires.Add(wire.Id);
                                 }
                             }
                         }
@@ -559,6 +562,7 @@ namespace FireAlarmCircuitAnalysis
                             {
                                 successCount++;
                                 segmentCreated = true;
+                                Window.circuitManager.CreatedWires.Add(wire.Id);
                             }
                         }
                     }
@@ -605,7 +609,12 @@ namespace FireAlarmCircuitAnalysis
                     segment.StartConnector,
                     segment.EndConnector);
 
-                return wire != null;
+                if (wire != null)
+                {
+                    Window.circuitManager.CreatedWires.Add(wire.Id);
+                    return true;
+                }
+                return false;
             }
             catch (Exception ex)
             {
@@ -886,27 +895,68 @@ namespace FireAlarmCircuitAnalysis
 
                 var uidoc = app.ActiveUIDocument;
                 var doc = uidoc.Document;
+                var view = uidoc.ActiveView;
 
                 // Get the element
                 var element = doc.GetElement(DeviceId);
                 if (element == null) return;
 
-                // Create a collection with just this element
-                var elementIds = new List<ElementId> { DeviceId };
-
                 // First select the element
+                var elementIds = new List<ElementId> { DeviceId };
                 uidoc.Selection.SetElementIds(elementIds);
 
-                // Use ShowElements to zoom to the element
-                uidoc.ShowElements(elementIds);
+                // Get zoom padding from configuration
+                var config = ConfigurationManager.Instance.Config;
+                double paddingFeet = config.UI?.ZoomPadding ?? 10.0; // Default 10 feet
+
+                // Get element's bounding box
+                var boundingBox = element.get_BoundingBox(view);
+                if (boundingBox != null)
+                {
+                    // Create padded bounding box
+                    var padding = paddingFeet; // Convert feet to internal units (already in feet)
+                    var paddedMin = new XYZ(
+                        boundingBox.Min.X - padding,
+                        boundingBox.Min.Y - padding,
+                        boundingBox.Min.Z - padding
+                    );
+                    var paddedMax = new XYZ(
+                        boundingBox.Max.X + padding,
+                        boundingBox.Max.Y + padding,
+                        boundingBox.Max.Z + padding
+                    );
+                    var paddedBoundingBox = new BoundingBoxXYZ
+                    {
+                        Min = paddedMin,
+                        Max = paddedMax
+                    };
+
+                    // Fit the padded area in view
+                    uidoc.GetOpenUIViews().FirstOrDefault(uiView => uiView.ViewId == view.Id)?.ZoomAndCenterRectangle(paddedMin, paddedMax);
+                }
+                else
+                {
+                    // Fallback to standard zoom if bounding box is not available
+                    uidoc.ShowElements(elementIds);
+                }
                 
-                // Alternative approach: Use RefreshActiveView to ensure the view updates
+                // Refresh the view
                 uidoc.RefreshActiveView();
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"ZoomToDeviceEventHandler failed: {ex.Message}");
-                // Don't show error dialog for zoom operations - fail silently
+                // Fallback to basic zoom if custom zoom fails
+                try
+                {
+                    var elementIds = new List<ElementId> { DeviceId };
+                    app.ActiveUIDocument.Selection.SetElementIds(elementIds);
+                    app.ActiveUIDocument.ShowElements(elementIds);
+                }
+                catch
+                {
+                    // Don't show error dialog for zoom operations - fail silently
+                }
             }
         }
 
@@ -987,6 +1037,24 @@ namespace FireAlarmCircuitAnalysis
 
                     // Clear the overrides dictionary
                     Window.circuitManager.OriginalOverrides.Clear();
+                    
+                    // Also restore wire overrides if any
+                    foreach (var kvp in Window.circuitManager.OriginalWireOverrides)
+                    {
+                        try
+                        {
+                            if (kvp.Key != ElementId.InvalidElementId)
+                            {
+                                var originalOverride = kvp.Value ?? new OverrideGraphicSettings();
+                                activeView.SetElementOverrides(kvp.Key, originalOverride);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Failed to restore wire override for {kvp.Key}: {ex.Message}");
+                        }
+                    }
+                    Window.circuitManager.OriginalWireOverrides.Clear();
                 }
             }
             catch (Exception ex)
@@ -999,6 +1067,180 @@ namespace FireAlarmCircuitAnalysis
         public string GetName()
         {
             return "Clear Visual Overrides";
+        }
+    }
+
+    /// <summary>
+    /// Event handler for edit mode - applies/removes visual overrides for circuit devices
+    /// </summary>
+    public class EditCircuitEventHandler : IExternalEventHandler
+    {
+        public Views.FireAlarmCircuitWindow Window { get; set; }
+        public bool IsEnteringEditMode { get; set; }
+
+        public void Execute(UIApplication app)
+        {
+            try
+            {
+                if (Window?.circuitManager == null) return;
+
+                var uidoc = app.ActiveUIDocument;
+                var doc = uidoc.Document;
+                var activeView = uidoc.ActiveView;
+                
+                if (activeView == null) return;
+
+                using (Transaction trans = new Transaction(doc, IsEnteringEditMode ? "Enter Edit Mode" : "Exit Edit Mode"))
+                {
+                    trans.Start();
+
+                    if (IsEnteringEditMode)
+                    {
+                        // Apply visual overrides to all circuit devices
+                        var allDevices = Window.circuitManager.MainCircuit.ToList();
+                        
+                        // Add all branch devices
+                        foreach (var branch in Window.circuitManager.Branches)
+                        {
+                            allDevices.AddRange(branch.Value);
+                        }
+
+                        // Apply overrides to show which devices are in the circuit
+                        foreach (var deviceId in allDevices)
+                        {
+                            if (deviceId != ElementId.InvalidElementId)
+                            {
+                                // Store original override if not already stored
+                                if (!Window.circuitManager.OriginalOverrides.ContainsKey(deviceId))
+                                {
+                                    var original = activeView.GetElementOverrides(deviceId);
+                                    Window.circuitManager.OriginalOverrides[deviceId] = original;
+                                }
+
+                                // Apply edit mode override
+                                var editOverride = new OverrideGraphicSettings();
+                                
+                                // Check if device is in main circuit or branch
+                                if (Window.circuitManager.MainCircuit.Contains(deviceId))
+                                {
+                                    // Main circuit - green with thicker lines
+                                    editOverride.SetProjectionLineColor(new Color(0, 255, 0));
+                                    editOverride.SetProjectionLineWeight(5);
+                                }
+                                else
+                                {
+                                    // Branch device - orange with thicker lines
+                                    editOverride.SetProjectionLineColor(new Color(255, 128, 0));
+                                    editOverride.SetProjectionLineWeight(5);
+                                }
+                                
+                                editOverride.SetHalftone(false); // Make them stand out
+                                activeView.SetElementOverrides(deviceId, editOverride);
+                            }
+                        }
+                        
+                        // Apply visual overrides to all created wires
+                        foreach (var wireId in Window.circuitManager.CreatedWires)
+                        {
+                            if (wireId != ElementId.InvalidElementId)
+                            {
+                                try
+                                {
+                                    var wire = doc.GetElement(wireId) as Wire;
+                                    if (wire != null)
+                                    {
+                                        // Store original override if not already stored
+                                        if (!Window.circuitManager.OriginalWireOverrides.ContainsKey(wireId))
+                                        {
+                                            var original = activeView.GetElementOverrides(wireId);
+                                            Window.circuitManager.OriginalWireOverrides[wireId] = original;
+                                        }
+
+                                        // Apply edit mode override for wires
+                                        var wireOverride = new OverrideGraphicSettings();
+                                        
+                                        // Check if wire connects to a branch device to determine color
+                                        bool isBranchWire = false;
+                                        var wireConnectors = wire.ConnectorManager.Connectors;
+                                        foreach (Connector conn in wireConnectors)
+                                        {
+                                            foreach (Connector refConn in conn.AllRefs)
+                                            {
+                                                var ownerId = refConn.Owner.Id;
+                                                if (Window.circuitManager.Branches.Any(b => b.Value.Contains(ownerId)))
+                                                {
+                                                    isBranchWire = true;
+                                                    break;
+                                                }
+                                            }
+                                            if (isBranchWire) break;
+                                        }
+                                        
+                                        // Apply color based on circuit type
+                                        if (isBranchWire)
+                                        {
+                                            wireOverride.SetProjectionLineColor(new Color(255, 128, 0)); // Orange for branch wires
+                                        }
+                                        else
+                                        {
+                                            wireOverride.SetProjectionLineColor(new Color(0, 255, 0)); // Green for main circuit wires
+                                        }
+                                        
+                                        wireOverride.SetProjectionLineWeight(5);
+                                        wireOverride.SetHalftone(false);
+                                        activeView.SetElementOverrides(wireId, wireOverride);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"Failed to override wire {wireId}: {ex.Message}");
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Remove visual overrides - restore originals for devices
+                        foreach (var kvp in Window.circuitManager.OriginalOverrides)
+                        {
+                            if (kvp.Key != ElementId.InvalidElementId)
+                            {
+                                activeView.SetElementOverrides(kvp.Key, kvp.Value ?? new OverrideGraphicSettings());
+                            }
+                        }
+                        Window.circuitManager.OriginalOverrides.Clear();
+                        
+                        // Remove visual overrides - restore originals for wires
+                        foreach (var kvp in Window.circuitManager.OriginalWireOverrides)
+                        {
+                            if (kvp.Key != ElementId.InvalidElementId)
+                            {
+                                try
+                                {
+                                    activeView.SetElementOverrides(kvp.Key, kvp.Value ?? new OverrideGraphicSettings());
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"Failed to restore wire override {kvp.Key}: {ex.Message}");
+                                }
+                            }
+                        }
+                        Window.circuitManager.OriginalWireOverrides.Clear();
+                    }
+
+                    trans.Commit();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"EditCircuitEventHandler failed: {ex.Message}");
+                TaskDialog.Show("Edit Mode Error", $"Failed to {(IsEnteringEditMode ? "enter" : "exit")} edit mode: {ex.Message}");
+            }
+        }
+
+        public string GetName()
+        {
+            return "Fire Alarm Circuit Edit Mode";
         }
     }
 }

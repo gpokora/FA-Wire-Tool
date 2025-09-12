@@ -18,6 +18,10 @@ namespace FireAlarmCircuitAnalysis
         public Dictionary<ElementId, List<ElementId>> Branches { get; set; }
         public Dictionary<ElementId, string> BranchNames { get; set; }
         public Dictionary<ElementId, OverrideGraphicSettings> OriginalOverrides { get; set; }
+        
+        // Wire tracking
+        public List<ElementId> CreatedWires { get; set; }
+        public Dictionary<ElementId, OverrideGraphicSettings> OriginalWireOverrides { get; set; }
 
         // Tree structure
         public CircuitNode RootNode { get; set; }
@@ -39,6 +43,8 @@ namespace FireAlarmCircuitAnalysis
             Branches = new Dictionary<ElementId, List<ElementId>>();
             BranchNames = new Dictionary<ElementId, string>();
             OriginalOverrides = new Dictionary<ElementId, OverrideGraphicSettings>();
+            CreatedWires = new List<ElementId>();
+            OriginalWireOverrides = new Dictionary<ElementId, OverrideGraphicSettings>();
             Statistics = new CircuitStatistics();
             
             // Initialize tree structure
@@ -994,6 +1000,8 @@ namespace FireAlarmCircuitAnalysis
             Branches.Clear();
             BranchNames.Clear();
             OriginalOverrides.Clear();
+            CreatedWires.Clear();
+            OriginalWireOverrides.Clear();
             NodeMap.Clear();
             
             // Reset tree

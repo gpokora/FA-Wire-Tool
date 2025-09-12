@@ -95,6 +95,7 @@ namespace FireAlarmCircuitAnalysis
                                 
                                 // Visual feedback
                                 var override_settings = new OverrideGraphicSettings();
+                                override_settings.SetProjectionLineColor(new Color(0, 255, 0)); // Green color for selected devices
                                 override_settings.SetHalftone(true);
                                 uidoc.ActiveView.SetElementOverrides(element.Id, override_settings);
                             }

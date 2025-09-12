@@ -284,10 +284,9 @@ namespace FireAlarmCircuitAnalysis
                 var workbook = new XSSFWorkbook();
                 try
                 {
-                    // Create sheets in specific order - IDNAC format
+                    // Create sheets in specific order - FQQ IDNAC Designer format
                     CreateParametersSheet(workbook);
-                    CreateIDNACDesignSheet(workbook);  // New IDNAC format sheet
-                    CreateCircuitLayoutSheet(workbook);
+                    CreateFQQIDNACDesignerSheet(workbook);  // Combined FQQ IDNAC Designer and Circuit Layout
                     CreateSummarySheet(workbook);
                     CreateDeviceDetailsSheet(workbook);
                     CreateCalculationsSheet(workbook);
@@ -427,9 +426,9 @@ namespace FireAlarmCircuitAnalysis
             sheet.SetColumnWidth(2, 40 * 256);
         }
 
-        private void CreateIDNACDesignSheet(IWorkbook workbook)
+        private void CreateFQQIDNACDesignerSheet(IWorkbook workbook)
         {
-            var sheet = workbook.CreateSheet("FQQ IDNAC Designer");
+            var sheet = workbook.CreateSheet("IDNAC Table");
             
             // FQQ-style cell formats
             var headerStyle = workbook.CreateCellStyle();
@@ -480,13 +479,13 @@ namespace FireAlarmCircuitAnalysis
             style2Decimal.BorderRight = BorderStyle.Thin;
             style2Decimal.Alignment = HorizontalAlignment.Center;
             
-            // Updated Headers with proper mapping including SKU
+            // FQQ IDNAC Designer Headers (combined with Circuit Layout calculations)
             var headerRow = sheet.CreateRow(0);
             string[] fqqHeaders = { 
-                "Item", "Panel Number", "Circuit Number", "Device Number", "Label", "SKU", "Candela", "Wattage", 
-                "Wire Length", "Wire Gauge", "Address", "Device mA", "Current (A)", 
-                "Voltage Drop (V)", "Voltage Drop %", "Total Voltage Drop %", "Voltage at Device (V)",
-                "Distance from Parent (ft)", "Accumulated Load (A)", "Status"
+                "Element ID", "Address", "Item", "Panel Number", "Circuit Number", "Device Number", "Device Type", "Location", "SKU", "Candela", "Wattage", 
+                "Distance (ft)", "Wire Gauge", "Device mA", "Current (A)", 
+                "Cumulative Distance (ft)", "Cumulative Current (A)", "Voltage Drop (V)", "Voltage Drop %", 
+                "Total Voltage Drop %", "Voltage at Device (V)", "Status", "Notes"
             };
             
             for (int i = 0; i < fqqHeaders.Length; i++)
@@ -502,27 +501,30 @@ namespace FireAlarmCircuitAnalysis
             AddFQQDevices(sheet, workbook, _circuitManager.RootNode, ref dataRow, ref itemNum,
                          dataStyle, altRowStyle, yellowStyle, style2Decimal);
             
-            // Column widths for new structure including SKU
-            sheet.SetColumnWidth(0, 8 * 256);   // Item
-            sheet.SetColumnWidth(1, 12 * 256);  // Panel Number
-            sheet.SetColumnWidth(2, 12 * 256);  // Circuit Number
-            sheet.SetColumnWidth(3, 12 * 256);  // Device Number
-            sheet.SetColumnWidth(4, 25 * 256);  // Label
-            sheet.SetColumnWidth(5, 20 * 256);  // SKU
-            sheet.SetColumnWidth(6, 10 * 256);  // Candela
-            sheet.SetColumnWidth(7, 10 * 256);  // Wattage
-            sheet.SetColumnWidth(8, 12 * 256);  // Wire Length
-            sheet.SetColumnWidth(9, 12 * 256);  // Wire Gauge
-            sheet.SetColumnWidth(10, 15 * 256); // Address
-            sheet.SetColumnWidth(11, 12 * 256); // Device mA
-            sheet.SetColumnWidth(12, 12 * 256); // Current (A)
-            sheet.SetColumnWidth(13, 15 * 256); // Voltage Drop (V)
-            sheet.SetColumnWidth(14, 15 * 256); // Voltage Drop %
-            sheet.SetColumnWidth(15, 18 * 256); // Total Voltage Drop %
-            sheet.SetColumnWidth(16, 18 * 256); // Voltage at Device (V)
-            sheet.SetColumnWidth(17, 20 * 256); // Distance from Parent (ft)
-            sheet.SetColumnWidth(18, 18 * 256); // Accumulated Load (A)
-            sheet.SetColumnWidth(19, 12 * 256); // Status
+            // Column widths for FQQ IDNAC Designer combined layout
+            sheet.SetColumnWidth(0, 12 * 256);  // Element ID
+            sheet.SetColumnWidth(1, 15 * 256);  // Address
+            sheet.SetColumnWidth(2, 8 * 256);   // Item
+            sheet.SetColumnWidth(3, 12 * 256);  // Panel Number
+            sheet.SetColumnWidth(4, 12 * 256);  // Circuit Number
+            sheet.SetColumnWidth(5, 12 * 256);  // Device Number
+            sheet.SetColumnWidth(6, 20 * 256);  // Device Type
+            sheet.SetColumnWidth(7, 25 * 256);  // Label
+            sheet.SetColumnWidth(8, 20 * 256);  // SKU
+            sheet.SetColumnWidth(9, 10 * 256);  // Candela
+            sheet.SetColumnWidth(10, 10 * 256); // Wattage
+            sheet.SetColumnWidth(11, 12 * 256); // Distance (ft)
+            sheet.SetColumnWidth(12, 12 * 256); // Wire Gauge
+            sheet.SetColumnWidth(13, 12 * 256); // Device mA
+            sheet.SetColumnWidth(14, 12 * 256); // Current (A)
+            sheet.SetColumnWidth(15, 18 * 256); // Cumulative Distance (ft)
+            sheet.SetColumnWidth(16, 18 * 256); // Cumulative Current (A)
+            sheet.SetColumnWidth(17, 15 * 256); // Voltage Drop (V)
+            sheet.SetColumnWidth(18, 15 * 256); // Voltage Drop %
+            sheet.SetColumnWidth(19, 18 * 256); // Total Voltage Drop %
+            sheet.SetColumnWidth(20, 18 * 256); // Voltage at Device (V)
+            sheet.SetColumnWidth(21, 12 * 256); // Status
+            sheet.SetColumnWidth(22, 25 * 256); // Notes
             
             // Freeze panes
             sheet.CreateFreezePane(0, 1);
@@ -546,33 +548,50 @@ namespace FireAlarmCircuitAnalysis
                 bool isAlternateRow = (rowNum % 2 == 0);
                 var rowStyle = isAlternateRow ? altRowStyle : dataStyle;
                 
-                // 0. Item - Sequential number starting with 1
-                var itemCell = row.CreateCell(0);
+                // 0. Element ID - First column
+                var elementIdCell = row.CreateCell(0);
+                elementIdCell.SetCellValue(GetParameterValue(node, "ElementId", node.DeviceData?.Element?.Id?.ToString() ?? "N/A"));
+                elementIdCell.CellStyle = rowStyle;
+                
+                // 1. Address - Second column from "ICP_CIRCUIT_ADDRESS" parameter
+                var addressCell = row.CreateCell(1);
+                addressCell.SetCellValue(GetParameterValue(node, "ICP_CIRCUIT_ADDRESS", "N/A"));
+                addressCell.CellStyle = rowStyle;
+                
+                // 2. Item - Sequential number starting with 1
+                var itemCell = row.CreateCell(2);
                 itemCell.SetCellValue(itemNum);
                 itemCell.CellStyle = rowStyle;
                 
-                // 1. Panel Number - from "CAB#" parameter
-                var panelCell = row.CreateCell(1);
-                panelCell.SetCellValue(GetParameterValue(node, "CAB#", "1"));
+                // 3. Panel Number - from "CAB#" parameter
+                var panelCell = row.CreateCell(3);
+                panelCell.SetCellValue(GetParameterValue(node, "CAB#", "N/A"));
                 panelCell.CellStyle = rowStyle;
                 
-                // 2. Circuit Number - from "CKT#" parameter
-                var circuitCell = row.CreateCell(2);
-                circuitCell.SetCellValue(GetParameterValue(node, "CKT#", "1"));
+                // 4. Circuit Number - from "CKT#" parameter
+                var circuitCell = row.CreateCell(4);
+                circuitCell.SetCellValue(GetParameterValue(node, "CKT#", "N/A"));
                 circuitCell.CellStyle = rowStyle;
                 
-                // 3. Device Number - from "MODD ADD" parameter
-                var deviceNumCell = row.CreateCell(3);
+                // 5. Device Number - from "MODD ADD" parameter
+                var deviceNumCell = row.CreateCell(5);
                 deviceNumCell.SetCellValue(GetParameterValue(node, "MODD ADD", node.SequenceNumber.ToString()));
                 deviceNumCell.CellStyle = rowStyle;
                 
-                // 4. Label - from family type name
-                var labelCell = row.CreateCell(4);
-                labelCell.SetCellValue(node.DeviceData.DeviceType ?? node.Name ?? "Fire Alarm Device");
-                labelCell.CellStyle = rowStyle;
+                // 6. Device Type - from family type name with NOTIFICATION stripped
+                var deviceTypeCell = row.CreateCell(6);
+                var deviceTypeName = node.DeviceData?.DeviceType ?? node.Name ?? "Fire Alarm Device";
+                deviceTypeName = deviceTypeName.Replace("NOTIFICATION", "").Trim();
+                deviceTypeCell.SetCellValue(deviceTypeName);
+                deviceTypeCell.CellStyle = rowStyle;
                 
-                // 5. SKU - from family instance model parameter
-                var skuCell = row.CreateCell(5);
+                // 7. Location - from AREA_DESCRIPTION shared parameter
+                var locationCell = row.CreateCell(7);
+                locationCell.SetCellValue(GetParameterValue(node, "AREA_DESCRIPTION", "N/A"));
+                locationCell.CellStyle = rowStyle;
+                
+                // 8. SKU - from family instance model parameter
+                var skuCell = row.CreateCell(8);
                 var skuValue = GetParameterValue(node, "Model", "");
                 if (string.IsNullOrEmpty(skuValue))
                 {
@@ -584,83 +603,90 @@ namespace FireAlarmCircuitAnalysis
                 skuCell.SetCellValue(skuValue);
                 skuCell.CellStyle = rowStyle;
                 
-                // 6. Candela - from "CANDELA" parameter
-                var candelaCell = row.CreateCell(6);
-                candelaCell.SetCellValue(GetParameterValue(node, "CANDELA", "75"));
+                // 9. Candela - from "CANDELA" parameter
+                var candelaCell = row.CreateCell(9);
+                candelaCell.SetCellValue(GetParameterValue(node, "CANDELA", "N/A"));
                 candelaCell.CellStyle = rowStyle;
                 
-                // 7. Wattage - from "Wattage" parameter
-                var wattageCell = row.CreateCell(7);
+                // 10. Wattage - from "Wattage" parameter
+                var wattageCell = row.CreateCell(10);
                 wattageCell.SetCellValue(GetParameterValue(node, "Wattage", "N/A"));
                 wattageCell.CellStyle = rowStyle;
                 
-                // 8. Wire Length - calculated total wire length
-                var lengthCell = row.CreateCell(8);
-                lengthCell.SetCellValue(Math.Round(GetTotalWireLength(node), 2));
-                lengthCell.CellStyle = style2Decimal;
+                // 11. Distance (ft) - adjustable distance to next device
+                var distanceCell = row.CreateCell(11);
+                distanceCell.SetCellValue(node.DistanceFromParent > 0 ? Math.Round(node.DistanceFromParent, 2) : 0);
+                distanceCell.CellStyle = yellowStyle; // Make it editable
                 
-                // 9. Wire Gauge - from selected wire gauge
-                var gaugeCell = row.CreateCell(9);
-                gaugeCell.SetCellValue(_circuitManager.Parameters.WireGauge);
+                // 12. Wire Gauge - from selected wire gauge
+                var gaugeCell = row.CreateCell(12);
+                gaugeCell.SetCellValue(_circuitManager.Parameters.WireGauge ?? "N/A");
                 gaugeCell.CellStyle = rowStyle;
                 
-                // 10. Address - from "ICP_CIRCUIT_ADDRESS" parameter
-                var addressCell = row.CreateCell(10);
-                addressCell.SetCellValue(GetParameterValue(node, "ICP_CIRCUIT_ADDRESS", "N/A"));
-                addressCell.CellStyle = rowStyle;
-                
-                // 11. Device mA - from "CURRENT DRAW" parameter
-                var devicemACell = row.CreateCell(11);
+                // 13. Device mA - from "CURRENT DRAW" parameter (editable)
+                var devicemACell = row.CreateCell(13);
                 var currentDrawValue = GetParameterValueAsDouble(node, "CURRENT DRAW", node.DeviceData.Current.Alarm * 1000);
-                devicemACell.SetCellValue(Math.Round(currentDrawValue, 2));
-                devicemACell.CellStyle = style2Decimal;
+                devicemACell.SetCellValue(currentDrawValue > 0 ? Math.Round(currentDrawValue, 2) : 0);
+                devicemACell.CellStyle = yellowStyle; // Make it editable
                 
-                // 12. Current (A) - calculated alarm current
-                var currentCell = row.CreateCell(12);
-                currentCell.SetCellValue(Math.Round(node.DeviceData.Current.Alarm, 2));
+                // 14. Current (A) - formula: =N{rowNum+1}/1000
+                var currentCell = row.CreateCell(14);
+                currentCell.SetCellFormula($"N{rowNum+1}/1000");
                 currentCell.CellStyle = style2Decimal;
                 
-                // 13. Voltage Drop (V) - this segment only
-                var voltDropCell = row.CreateCell(13);
-                voltDropCell.SetCellValue(Math.Round(node.VoltageDrop, 2));
+                // 15. Cumulative Distance (ft) - formula: =SUM($L$2:L{rowNum+1})*RoutingOverhead
+                var cumDistanceCell = row.CreateCell(15);
+                if (rowNum == 1) // First device
+                {
+                    cumDistanceCell.SetCellFormula($"L{rowNum+1}*RoutingOverhead");
+                }
+                else
+                {
+                    cumDistanceCell.SetCellFormula($"P{rowNum}+L{rowNum+1}*RoutingOverhead");
+                }
+                cumDistanceCell.CellStyle = style2Decimal;
+                
+                // 16. Cumulative Current (A) - formula: =SUM($O$2:O{rowNum+1})
+                var cumCurrentCell = row.CreateCell(16);
+                cumCurrentCell.SetCellFormula($"SUM($O$2:O{rowNum+1})");
+                cumCurrentCell.CellStyle = style2Decimal;
+                
+                // 17. Voltage Drop (V) - formula: =Q{rowNum+1}*2*L{rowNum+1}*WireResistance/1000
+                var voltDropCell = row.CreateCell(17);
+                voltDropCell.SetCellFormula($"Q{rowNum+1}*2*L{rowNum+1}*WireResistance/1000");
                 voltDropCell.CellStyle = style2Decimal;
                 
-                // 14. Voltage Drop % - this segment only
-                var voltDropPercentCell = row.CreateCell(14);
-                var voltDropPercent = _circuitManager.Parameters.SystemVoltage > 0 
-                    ? (node.VoltageDrop / _circuitManager.Parameters.SystemVoltage) * 100 
-                    : 0;
-                voltDropPercentCell.SetCellValue(Math.Round(voltDropPercent, 2));
+                // 18. Voltage Drop % - formula: =R{rowNum+1}/SystemVoltage*100
+                var voltDropPercentCell = row.CreateCell(18);
+                voltDropPercentCell.SetCellFormula($"R{rowNum+1}/SystemVoltage*100");
                 voltDropPercentCell.CellStyle = style2Decimal;
                 
-                // 15. Total Voltage Drop % - cumulative from source
-                var totalDropCell = row.CreateCell(15);
-                var totalDropPercent = _circuitManager.Parameters.SystemVoltage > 0 
-                    ? ((_circuitManager.Parameters.SystemVoltage - node.Voltage) / _circuitManager.Parameters.SystemVoltage) * 100 
-                    : 0;
-                totalDropCell.SetCellValue(Math.Round(totalDropPercent, 2));
+                // 19. Total Voltage Drop % - formula: =(SystemVoltage-U{rowNum+1})/SystemVoltage*100
+                var totalDropCell = row.CreateCell(19);
+                totalDropCell.SetCellFormula($"(SystemVoltage-U{rowNum+1})/SystemVoltage*100");
                 totalDropCell.CellStyle = style2Decimal;
                 
-                // 16. Voltage at Device (V)
-                var voltsCell = row.CreateCell(16);
-                voltsCell.SetCellValue(Math.Round(node.Voltage, 2));
+                // 20. Voltage at Device (V) - formula: =SystemVoltage-SUM($R$2:R{rowNum+1})
+                var voltsCell = row.CreateCell(20);
+                if (rowNum == 1) // First device
+                {
+                    voltsCell.SetCellFormula($"SystemVoltage-R{rowNum+1}");
+                }
+                else
+                {
+                    voltsCell.SetCellFormula($"U{rowNum}-R{rowNum+1}");
+                }
                 voltsCell.CellStyle = style2Decimal;
                 
-                // 17. Distance from Parent (ft)
-                var distanceCell = row.CreateCell(17);
-                distanceCell.SetCellValue(Math.Round(node.DistanceFromParent, 2));
-                distanceCell.CellStyle = style2Decimal;
-                
-                // 18. Accumulated Load (A)
-                var accLoadCell = row.CreateCell(18);
-                accLoadCell.SetCellValue(Math.Round(node.AccumulatedLoad, 2));
-                accLoadCell.CellStyle = style2Decimal;
-                
-                // 19. Status
-                var statusCell = row.CreateCell(19);
-                var status = node.Voltage >= _circuitManager.Parameters.MinVoltage ? "OK" : "LOW VOLTAGE";
-                statusCell.SetCellValue(status);
+                // 21. Status - formula: =IF(U{rowNum+1}>=MinVoltage,"OK","LOW VOLTAGE")
+                var statusCell = row.CreateCell(21);
+                statusCell.SetCellFormula($"IF(U{rowNum+1}>=MinVoltage,\"OK\",\"LOW VOLTAGE\")");
                 statusCell.CellStyle = rowStyle;
+                
+                // 22. Notes - editable field for user notes
+                var notesCell = row.CreateCell(22);
+                notesCell.SetCellValue("N/A");
+                notesCell.CellStyle = yellowStyle; // Make it editable
                 
                 itemNum++;
                 rowNum++;
@@ -727,7 +753,7 @@ namespace FireAlarmCircuitAnalysis
         /// <summary>
         /// Extract parameter value from device data
         /// </summary>
-        private string GetParameterValue(CircuitNode node, string parameterName, string defaultValue = "")
+        private string GetParameterValue(CircuitNode node, string parameterName, string defaultValue = "N/A")
         {
             try
             {
@@ -737,7 +763,8 @@ namespace FireAlarmCircuitAnalysis
                 var param = node.DeviceData.Element.LookupParameter(parameterName);
                 if (param != null && param.HasValue)
                 {
-                    return param.AsString() ?? param.AsValueString() ?? defaultValue;
+                    var value = param.AsString() ?? param.AsValueString();
+                    return string.IsNullOrEmpty(value) ? defaultValue : value;
                 }
                 
                 return defaultValue;
@@ -753,7 +780,9 @@ namespace FireAlarmCircuitAnalysis
         /// </summary>
         private double GetParameterValueAsDouble(CircuitNode node, string parameterName, double defaultValue = 0.0)
         {
-            var stringValue = GetParameterValue(node, parameterName);
+            var stringValue = GetParameterValue(node, parameterName, "0");
+            if (stringValue == "N/A" || string.IsNullOrEmpty(stringValue))
+                return 0.0;
             if (double.TryParse(stringValue, out double result))
                 return result;
             return defaultValue;
@@ -801,205 +830,6 @@ namespace FireAlarmCircuitAnalysis
                 return "NAC";
         }
 
-        private void CreateCircuitLayoutSheet(IWorkbook workbook)
-        {
-            var sheet = workbook.CreateSheet("Circuit Layout");
-            
-            // Create cell styles
-            var titleStyle = workbook.CreateCellStyle();
-            var titleFont = workbook.CreateFont();
-            titleFont.FontHeightInPoints = 14;
-            titleFont.IsBold = true;
-            titleStyle.SetFont(titleFont);
-            
-            var headerStyle = workbook.CreateCellStyle();
-            var headerFont = workbook.CreateFont();
-            headerFont.IsBold = true;
-            headerFont.Color = HSSFColor.White.Index;
-            headerStyle.SetFont(headerFont);
-            headerStyle.FillForegroundColor = HSSFColor.DarkBlue.Index;
-            headerStyle.FillPattern = FillPattern.SolidForeground;
-            headerStyle.Alignment = HorizontalAlignment.Center;
-            
-            var yellowStyle = workbook.CreateCellStyle();
-            yellowStyle.FillForegroundColor = HSSFColor.LightYellow.Index;
-            yellowStyle.FillPattern = FillPattern.SolidForeground;
-            
-            var grayStyle = workbook.CreateCellStyle();
-            grayStyle.FillForegroundColor = HSSFColor.Grey25Percent.Index;
-            grayStyle.FillPattern = FillPattern.SolidForeground;
-            
-            // Number formats
-            var format3Decimal = workbook.CreateDataFormat();
-            var style3Decimal = workbook.CreateCellStyle();
-            style3Decimal.DataFormat = format3Decimal.GetFormat("0.000");
-            
-            var format1Decimal = workbook.CreateDataFormat();
-            var style1Decimal = workbook.CreateCellStyle();
-            style1Decimal.DataFormat = format1Decimal.GetFormat("0.0");
-            
-            var format2Decimal = workbook.CreateDataFormat();
-            var style2Decimal = workbook.CreateCellStyle();
-            style2Decimal.DataFormat = format2Decimal.GetFormat("0.00");
-            
-            // Title
-            var row0 = sheet.CreateRow(0);
-            var titleCell = row0.CreateCell(0);
-            titleCell.SetCellValue("FIRE ALARM CIRCUIT LAYOUT WITH CALCULATIONS");
-            titleCell.CellStyle = titleStyle;
-            sheet.AddMergedRegion(new CellRangeAddress(0, 0, 0, 10));
-            
-            // Headers
-            var headerRow = sheet.CreateRow(2);
-            string[] headers = { "Pos", "Device Name", "Type", "Location", "Alarm Current (A)", 
-                               "Distance to Next (ft)", "Cumulative Distance (ft)", "Cumulative Current (A)", 
-                               "Voltage Drop (V)", "Voltage at Device (V)", "Status" };
-            for (int i = 0; i < headers.Length; i++)
-            {
-                var cell = headerRow.CreateCell(i);
-                cell.SetCellValue(headers[i]);
-                cell.CellStyle = headerStyle;
-            }
-            
-            // Add circuit devices with formulas
-            int dataRow = 3;
-            int position = 1;
-            AddDevicesWithFormulas(sheet, workbook, _circuitManager.RootNode, ref dataRow, ref position, "", true, 
-                                 yellowStyle, grayStyle, style3Decimal, style1Decimal, style2Decimal);
-            
-            // Auto-fit columns
-            for (int i = 0; i < headers.Length; i++)
-            {
-                sheet.AutoSizeColumn(i);
-            }
-            sheet.SetColumnWidth(1, 25 * 256); // Device name column wider
-            
-            // Freeze panes
-            sheet.CreateFreezePane(0, 3);
-        }
-
-        private void AddDevicesWithFormulas(ISheet sheet, IWorkbook workbook, CircuitNode node, ref int rowNum, 
-                                          ref int position, string prefix, bool isFirstDevice,
-                                          ICellStyle yellowStyle, ICellStyle grayStyle,
-                                          ICellStyle style3Decimal, ICellStyle style1Decimal, ICellStyle style2Decimal)
-        {
-            if (node.NodeType == "Root")
-            {
-                // Start with the panel
-                var row = sheet.CreateRow(rowNum);
-                row.CreateCell(0).SetCellValue(position);
-                row.CreateCell(1).SetCellValue("FIRE ALARM PANEL");
-                row.CreateCell(2).SetCellValue("Panel");
-                row.CreateCell(3).SetCellValue("Main");
-                row.CreateCell(4).SetCellValue(0);
-                row.CreateCell(5).SetCellValue(0);
-                row.CreateCell(6).SetCellValue(0);
-                row.CreateCell(7).SetCellValue(0);
-                row.CreateCell(8).SetCellValue(0);
-                row.CreateCell(9).SetCellFormula("SystemVoltage");
-                row.CreateCell(10).SetCellValue("OK");
-                
-                // Style panel row
-                for (int i = 0; i <= 10; i++)
-                {
-                    row.GetCell(i).CellStyle = grayStyle;
-                }
-                
-                position++;
-                rowNum++;
-                
-                // Process children
-                foreach (var child in node.Children)
-                {
-                    AddDevicesWithFormulas(sheet, workbook, child, ref rowNum, ref position, prefix, true,
-                                         yellowStyle, grayStyle, style3Decimal, style1Decimal, style2Decimal);
-                }
-            }
-            else if (node.NodeType == "Device" && node.DeviceData != null)
-            {
-                var location = node.IsBranchDevice ? prefix + "T-Tap" : prefix + "Main";
-                
-                var row = sheet.CreateRow(rowNum);
-                
-                // Basic device info
-                row.CreateCell(0).SetCellValue(position);
-                row.CreateCell(1).SetCellValue(node.Name);
-                row.CreateCell(2).SetCellValue(node.DeviceData.DeviceType ?? "Fire Alarm Device");
-                row.CreateCell(3).SetCellValue(location);
-                
-                var currentCell = row.CreateCell(4);
-                currentCell.SetCellValue(node.DeviceData.Current.Alarm);
-                currentCell.CellStyle = yellowStyle;
-                
-                // Distance to next device (adjustable)
-                var distanceCell = row.CreateCell(5);
-                if (isFirstDevice && node.Parent?.NodeType == "Root")
-                {
-                    distanceCell.SetCellFormula("SupplyDistance");
-                }
-                else
-                {
-                    distanceCell.SetCellValue(node.DistanceFromParent);
-                    distanceCell.CellStyle = yellowStyle;
-                }
-                
-                // FORMULAS for calculated values
-                
-                // Cumulative Distance
-                if (rowNum == 4) // First device after panel
-                {
-                    row.CreateCell(6).SetCellFormula($"F{rowNum+1}*RoutingOverhead");
-                }
-                else
-                {
-                    row.CreateCell(6).SetCellFormula($"G{rowNum}+F{rowNum+1}*RoutingOverhead");
-                }
-                
-                // Cumulative Current
-                row.CreateCell(7).SetCellFormula($"SUMIF($D$4:$D$1000,\"Main\",$E$4:$E$1000)-SUMIF($A$4:$A{rowNum},\"<=\"&A{rowNum+1},$E$4:$E{rowNum})+SUMIF($D$4:$D$1000,\"*\"&B{rowNum+1}&\"*\",$E$4:$E$1000)");
-                
-                // Voltage Drop
-                row.CreateCell(8).SetCellFormula($"H{rowNum+1}*2*G{rowNum+1}*WireResistance/1000");
-                
-                // Voltage at Device
-                row.CreateCell(9).SetCellFormula($"J{rowNum}-H{rowNum+1}*2*F{rowNum+1}*WireResistance/1000");
-                
-                // Status formula
-                row.CreateCell(10).SetCellFormula($"IF(J{rowNum+1}>=MinVoltage,\"OK\",\"LOW VOLTAGE\")");
-                
-                // Format numbers
-                row.GetCell(4).CellStyle = style3Decimal;
-                row.GetCell(5).CellStyle = style1Decimal;
-                row.GetCell(6).CellStyle = style1Decimal;
-                row.GetCell(7).CellStyle = style3Decimal;
-                row.GetCell(8).CellStyle = style2Decimal;
-                row.GetCell(9).CellStyle = style2Decimal;
-                
-                position++;
-                rowNum++;
-                
-                // Process T-tap branches first (if this is a tap point)
-                var branches = node.Children.Where(c => c.IsBranchDevice).ToList();
-                if (branches.Any())
-                {
-                    foreach (var branch in branches)
-                    {
-                        AddDevicesWithFormulas(sheet, workbook, branch, ref rowNum, ref position, 
-                                             node.Name + " → ", false, yellowStyle, grayStyle, 
-                                             style3Decimal, style1Decimal, style2Decimal);
-                    }
-                }
-                
-                // Then process main circuit continuation
-                var mainChild = node.Children.FirstOrDefault(c => !c.IsBranchDevice);
-                if (mainChild != null)
-                {
-                    AddDevicesWithFormulas(sheet, workbook, mainChild, ref rowNum, ref position, 
-                                         prefix, false, yellowStyle, grayStyle, 
-                                         style3Decimal, style1Decimal, style2Decimal);
-                }
-            }
-        }
 
         private void CreateSummarySheet(IWorkbook workbook)
         {
@@ -1062,36 +892,36 @@ namespace FireAlarmCircuitAnalysis
             var devicesRow = sheet.CreateRow(rowNum++);
             devicesRow.CreateCell(0).SetCellValue("Total Devices:");
             var devicesCell = devicesRow.CreateCell(1);
-            devicesCell.SetCellFormula("COUNTA('Circuit Layout'!B:B)-2");
+            devicesCell.SetCellFormula("COUNTA('IDNAC Table'!H:H)-1");
             
             var loadRow = sheet.CreateRow(rowNum++);
             loadRow.CreateCell(0).SetCellValue("Total Alarm Load (A):");
             var loadCell = loadRow.CreateCell(1);
-            loadCell.SetCellFormula("SUM('Circuit Layout'!E:E)");
+            loadCell.SetCellFormula("SUM('IDNAC Table'!O:O)");
             loadCell.CellStyle = style3Decimal;
             
             var distanceRow = sheet.CreateRow(rowNum++);
             distanceRow.CreateCell(0).SetCellValue("Maximum Wire Distance (ft):");
             var distanceCell = distanceRow.CreateCell(1);
-            distanceCell.SetCellFormula("MAX('Circuit Layout'!G:G)");
+            distanceCell.SetCellFormula("MAX('IDNAC Table'!P:P)");
             distanceCell.CellStyle = style1Decimal;
             
             var dropRow = sheet.CreateRow(rowNum++);
             dropRow.CreateCell(0).SetCellValue("Maximum Voltage Drop (V):");
             var dropCell = dropRow.CreateCell(1);
-            dropCell.SetCellFormula("SystemVoltage-MIN('Circuit Layout'!J:J)");
+            dropCell.SetCellFormula("SystemVoltage-MIN('IDNAC Table'!U:U)");
             dropCell.CellStyle = style2Decimal;
             
             var eolRow = sheet.CreateRow(rowNum++);
             eolRow.CreateCell(0).SetCellValue("End-of-Line Voltage (V):");
             var eolCell = eolRow.CreateCell(1);
-            eolCell.SetCellFormula("MIN('Circuit Layout'!J:J)");
+            eolCell.SetCellFormula("MIN('IDNAC Table'!U:U)");
             eolCell.CellStyle = style2Decimal;
             
             var statusRow = sheet.CreateRow(rowNum++);
             statusRow.CreateCell(0).SetCellValue("Circuit Status:");
             var statusCell = statusRow.CreateCell(1);
-            statusCell.SetCellFormula("IF(MIN('Circuit Layout'!J:J)>=MinVoltage,\"PASS\",\"FAIL\")");
+            statusCell.SetCellFormula("IF(MIN('IDNAC Table'!U:U)>=MinVoltage,\"PASS\",\"FAIL\")");
             statusCell.CellStyle = boldStyle;
             
             rowNum++; // Skip row
@@ -1122,7 +952,7 @@ namespace FireAlarmCircuitAnalysis
             var utilRow = sheet.CreateRow(rowNum++);
             utilRow.CreateCell(0).SetCellValue("Load Utilization %:");
             var utilCell = utilRow.CreateCell(1);
-            utilCell.SetCellFormula($"SUM('Circuit Layout'!E:E)/({_report.Parameters.MaxLoad}*(1-SafetyPercent/100))");
+            utilCell.SetCellFormula($"SUM('IDNAC Table'!O:O)/({_report.Parameters.MaxLoad}*(1-SafetyPercent/100))");
             utilCell.CellStyle = stylePercent1;
             
             // Format columns
