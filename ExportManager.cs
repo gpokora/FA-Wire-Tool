@@ -556,16 +556,79 @@ namespace FireAlarmCircuitAnalysis
                 // Cumulative Current column (column Q = index 16) - compare against usable load
                 var currentRange = new CellRangeAddress(1, lastRowNum, 16, 16);
                 
-                // Create color scale formatting instead of data bars for broader compatibility
-                var currentRule = sheetCF.CreateConditionalFormattingRule(
-                    ComparisonOperator.GreaterThan, "0");
-                    
-                // Apply simple color formatting
-                var currentFormatting = currentRule.CreatePatternFormatting();
-                currentFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightGreen.Index;
-                currentFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                // Try to create actual data bars first, with color scale as fallback
+                bool dataBarCreated = false;
                 
-                sheetCF.AddConditionalFormatting(new CellRangeAddress[] { currentRange }, new IConditionalFormattingRule[] { currentRule });
+                try 
+                {
+                    // Attempt to create real data bars using NPOI 2.5.6 API
+                    if (sheetCF is XSSFSheetConditionalFormatting xssfCF && sheet is XSSFSheet)
+                    {
+                        var dataBarColor = new XSSFColor(new byte[] { 0, 176, 80 }); // Green color
+                        var dataBarRule = xssfCF.CreateConditionalFormattingRule(dataBarColor);
+                        
+                        // The data bar is automatically created with MIN/MAX thresholds
+                        var dataBar = dataBarRule.DataBarFormatting;
+                        if (dataBar != null)
+                        {
+                            xssfCF.AddConditionalFormatting(new CellRangeAddress[] { currentRange }, dataBarRule);
+                            dataBarCreated = true;
+                            System.Diagnostics.Debug.WriteLine("Successfully created data bars for current column");
+                        }
+                    }
+                }
+                catch (Exception dbEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Data bar creation failed: {dbEx.Message}");
+                }
+                
+                if (!dataBarCreated)
+                {
+                    try 
+                    {
+                        // Fallback to gradient based on percentage of usable load
+                        // This provides visual indication of how close we are to the limit
+                        
+                        // Critical (>90% of usable load) - Red
+                        var criticalRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0.9*UsableLoad");
+                        var criticalFormatting = criticalRule.CreatePatternFormatting();
+                        criticalFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.Rose.Index;
+                        criticalFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Warning (>70% of usable load) - Yellow
+                        var warningRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0.7*UsableLoad");
+                        var warningFormatting = warningRule.CreatePatternFormatting();
+                        warningFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightYellow.Index;
+                        warningFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Safe (<70% of usable load) - Green
+                        var safeRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0");
+                        var safeFormatting = safeRule.CreatePatternFormatting();
+                        safeFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightGreen.Index;
+                        safeFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Apply rules in order (high priority first)
+                        sheetCF.AddConditionalFormatting(new CellRangeAddress[] { currentRange }, 
+                            new IConditionalFormattingRule[] { criticalRule, warningRule, safeRule });
+                        System.Diagnostics.Debug.WriteLine("Used gradient simulation fallback for current column");
+                    }
+                    catch
+                    {
+                        // Final fallback to simple color formatting
+                        var currentRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0");
+                            
+                        var currentFormatting = currentRule.CreatePatternFormatting();
+                        currentFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightGreen.Index;
+                        currentFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        sheetCF.AddConditionalFormatting(new CellRangeAddress[] { currentRange }, new IConditionalFormattingRule[] { currentRule });
+                        System.Diagnostics.Debug.WriteLine("Used simple color fallback for current column");
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -578,20 +641,83 @@ namespace FireAlarmCircuitAnalysis
         {
             try
             {
-                // Distance formatting - apply color scale instead of data bars
+                // Distance formatting - try data bars first, then fallback to color scale
                 // Each device will show how close it is to its maximum allowable wire length
                 
                 var distanceRange = new CellRangeAddress(1, lastRowNum, 15, 15); // Column P (cumulative distance)
+                bool dataBarCreated = false;
                 
-                // Create simple color formatting for distance
-                var distanceRule = sheetCF.CreateConditionalFormattingRule(
-                    ComparisonOperator.GreaterThan, "0");
-                    
-                var distanceFormatting = distanceRule.CreatePatternFormatting();
-                distanceFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightBlue.Index;
-                distanceFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                try 
+                {
+                    // Attempt to create real data bars for distance
+                    if (sheetCF is XSSFSheetConditionalFormatting xssfCF)
+                    {
+                        var dataBarColor = new XSSFColor(new byte[] { 68, 114, 196 }); // Blue color
+                        var dataBarRule = xssfCF.CreateConditionalFormattingRule(dataBarColor);
+                        
+                        // The data bar is automatically created with MIN/MAX thresholds
+                        var dataBar = dataBarRule.DataBarFormatting;
+                        if (dataBar != null)
+                        {
+                            xssfCF.AddConditionalFormatting(new CellRangeAddress[] { distanceRange }, dataBarRule);
+                            dataBarCreated = true;
+                            System.Diagnostics.Debug.WriteLine("Successfully created data bars for distance column");
+                        }
+                    }
+                }
+                catch (Exception dbEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Distance data bar creation failed: {dbEx.Message}");
+                }
                 
-                sheetCF.AddConditionalFormatting(new CellRangeAddress[] { distanceRange }, new IConditionalFormattingRule[] { distanceRule });
+                if (!dataBarCreated)
+                {
+                    try 
+                    {
+                        // Fallback to gradient based on percentage of max allowable distance
+                        // Compare cumulative distance (P) against max allowable distance (R) for each row
+                        
+                        // Critical (>90% of max allowable) - Red
+                        // For each row, compare P(row) to R(row) - using OFFSET for row-relative comparison
+                        var criticalRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0.9*OFFSET($R$2,ROW()-2,0)");
+                        var criticalFormatting = criticalRule.CreatePatternFormatting();
+                        criticalFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.Rose.Index;
+                        criticalFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Warning (>70% of max allowable) - Yellow
+                        var warningRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0.7*OFFSET($R$2,ROW()-2,0)");
+                        var warningFormatting = warningRule.CreatePatternFormatting();
+                        warningFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightYellow.Index;
+                        warningFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Safe (<70% of max allowable) - Green
+                        var safeRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0");
+                        var safeFormatting = safeRule.CreatePatternFormatting();
+                        safeFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightGreen.Index;
+                        safeFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Apply rules in order (high priority first)
+                        sheetCF.AddConditionalFormatting(new CellRangeAddress[] { distanceRange }, 
+                            new IConditionalFormattingRule[] { criticalRule, warningRule, safeRule });
+                        System.Diagnostics.Debug.WriteLine("Used gradient simulation fallback for distance column");
+                    }
+                    catch
+                    {
+                        // Final fallback to simple color formatting
+                        var distanceRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0");
+                            
+                        var distanceFormatting = distanceRule.CreatePatternFormatting();
+                        distanceFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightBlue.Index;
+                        distanceFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        sheetCF.AddConditionalFormatting(new CellRangeAddress[] { distanceRange }, new IConditionalFormattingRule[] { distanceRule });
+                        System.Diagnostics.Debug.WriteLine("Used simple color fallback for distance column");
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -792,9 +918,13 @@ namespace FireAlarmCircuitAnalysis
                 }
                 voltsCell.CellStyle = style2Decimal;
                 
-                // 22. Status - formula: =IF(V{rowNum+1}>=MinVoltage,"OK","LOW VOLTAGE")
+                // 22. Status - formula: Check both voltage and current against limits
                 var statusCell = row.CreateCell(22);
-                statusCell.SetCellFormula($"IF(V{rowNum+1}>=MinVoltage,\"OK\",\"LOW VOLTAGE\")");
+                // IF cumulative current > usable load => "EXCEEDS LOAD"
+                // ELSE IF voltage < min voltage => "LOW VOLTAGE"  
+                // ELSE IF cumulative current > 0.9 * usable load => "NEAR LIMIT"
+                // ELSE "OK"
+                statusCell.SetCellFormula($"IF(Q{rowNum+1}>UsableLoad,\"EXCEEDS LOAD\",IF(V{rowNum+1}<MinVoltage,\"LOW VOLTAGE\",IF(Q{rowNum+1}>0.9*UsableLoad,\"NEAR LIMIT\",\"OK\")))");
                 statusCell.CellStyle = rowStyle;
                 
                 // 23. Notes - editable field for user notes

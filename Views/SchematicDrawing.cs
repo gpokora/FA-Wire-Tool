@@ -308,9 +308,28 @@ namespace FireAlarmCircuitAnalysis.Views
                 };
                 _deviceMap[child] = device;
                 
-                // Position any T-tap branches from this device
+                // Check for T-tap branches using BOTH tree structure AND legacy branch data
+                bool hasBranches = false;
+                
+                // Method 1: Check tree structure for branch children
                 var branchChildren = child.Children.Where(c => c.IsBranchDevice).ToList();
                 if (branchChildren.Any())
+                {
+                    hasBranches = true;
+                }
+                
+                // Method 2: Check legacy Branches dictionary
+                if (!hasBranches && child.ElementId != null && _circuitManager.Branches.ContainsKey(child.ElementId))
+                {
+                    var branchDevices = _circuitManager.Branches[child.ElementId];
+                    if (branchDevices.Count > 0)
+                    {
+                        hasBranches = true;
+                        System.Diagnostics.Debug.WriteLine($"SCHEMATIC: Found T-tap from legacy data for {child.Name} with {branchDevices.Count} branch devices");
+                    }
+                }
+                
+                if (hasBranches)
                 {
                     PositionBranchDevices(child, device.X, mainY + _branchVerticalSpacing * _scale);
                 }
@@ -324,8 +343,31 @@ namespace FireAlarmCircuitAnalysis.Views
 
         private void PositionBranchDevices(CircuitNode tapNode, double tapX, double branchY)
         {
-            var branches = tapNode.Children.Where(c => c.IsBranchDevice).ToList();
+            // Get branch devices from BOTH tree structure AND legacy branch data
+            var branches = new List<CircuitNode>();
+            
+            // Method 1: Get from tree structure
+            branches.AddRange(tapNode.Children.Where(c => c.IsBranchDevice));
+            
+            // Method 2: Get from legacy Branches dictionary if tree is incomplete
+            if (tapNode.ElementId != null && _circuitManager.Branches.ContainsKey(tapNode.ElementId))
+            {
+                var branchDeviceIds = _circuitManager.Branches[tapNode.ElementId];
+                foreach (var deviceId in branchDeviceIds)
+                {
+                    // Find the node in the tree for this device ID
+                    var branchNode = _circuitManager.RootNode.FindNode(deviceId);
+                    if (branchNode != null && !branches.Contains(branchNode))
+                    {
+                        branches.Add(branchNode);
+                        System.Diagnostics.Debug.WriteLine($"SCHEMATIC: Added branch device {branchNode.Name} from legacy data");
+                    }
+                }
+            }
+            
             if (!branches.Any()) return;
+            
+            System.Diagnostics.Debug.WriteLine($"SCHEMATIC: Positioning {branches.Count} T-tap branches from {tapNode.Name}");
             
             // Calculate total branch width to center branches under tap
             int totalBranchDevices = 0;
@@ -349,6 +391,8 @@ namespace FireAlarmCircuitAnalysis.Views
                     TapNode = tapNode
                 };
                 _deviceMap[branch] = device;
+                
+                System.Diagnostics.Debug.WriteLine($"SCHEMATIC: Positioned T-tap device {branch.Name} at X={branchX:F1}, Y={branchY:F1} from tap {tapNode.Name}");
                 
                 // Position subsequent devices in this branch chain following parent-child structure
                 double nextX = branchX + (_minDeviceSpacing * _scale);
