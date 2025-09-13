@@ -5,10 +5,10 @@ using System.Linq;
 using System.Text;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.DB;
-using OfficeOpenXml;
-using OfficeOpenXml.Style;
-using OfficeOpenXml.ConditionalFormatting;
-using OfficeOpenXml.Drawing.Chart;
+using NPOI.SS.UserModel;
+using NPOI.XSSF.UserModel;
+using NPOI.SS.Util;
+using NPOI.HSSF.Util;
 using PdfSharp;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
@@ -24,85 +24,16 @@ namespace FireAlarmCircuitAnalysis
     {
         private readonly CircuitManager _circuitManager;
         private readonly CircuitReport _report;
-        
+
         static ExportManager()
         {
-            try
-            {
-                // Set EPPlus license context early in static constructor using proper EPPlus 8.1.1 API
-                ExcelPackage.License.SetNonCommercialPersonal("Fire Alarm Circuit Analysis Tool");
-                _licenseSet = true;
-                System.Diagnostics.Debug.WriteLine("EPPlus license set in static constructor");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to set EPPlus license in static constructor: {ex.Message}");
-                // Will try again later in instance methods
-            }
+            // NPOI doesn't require license configuration
         }
 
         public ExportManager(CircuitManager circuitManager)
         {
-            // Set EPPlus license context - Non-Commercial use
-            SetEPPlusLicense();
-            
             _circuitManager = circuitManager;
             _report = circuitManager.GenerateReport();
-        }
-        
-        private static bool _licenseSet = false;
-        
-        private static void SetEPPlusLicense()
-        {
-            if (_licenseSet) return;
-            
-            try
-            {
-                // EPPlus 8.1.1 proper license setting method for non-commercial personal use
-                ExcelPackage.License.SetNonCommercialPersonal("Fire Alarm Circuit Analysis Tool");
-                _licenseSet = true;
-                System.Diagnostics.Debug.WriteLine("EPPlus license context set to NonCommercial Personal");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to set EPPlus license context: {ex.Message}");
-                // Try alternative approach - set it when creating ExcelPackage
-            }
-        }
-        
-        private static ExcelPackage CreateExcelPackage()
-        {
-            try
-            {
-                // Multiple attempts to ensure EPPlus license is set
-                EnsureEPPlusLicense();
-                
-                var package = new ExcelPackage();
-                return package;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to create ExcelPackage: {ex.Message}");
-                throw new InvalidOperationException($"EPPlus initialization failed. Please ensure EPPlus license is properly configured. Error: {ex.Message}", ex);
-            }
-        }
-        
-        private static void EnsureEPPlusLicense()
-        {
-            if (_licenseSet) return;
-            
-            try
-            {
-                // Final attempt to set EPPlus license using proper EPPlus 8.1.1 API
-                ExcelPackage.License.SetNonCommercialPersonal("Fire Alarm Circuit Analysis Tool");
-                _licenseSet = true;
-                System.Diagnostics.Debug.WriteLine("EPPlus license context set to NonCommercial Personal in EnsureEPPlusLicense");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Critical: Could not set EPPlus license: {ex.Message}");
-                throw new InvalidOperationException("EPPlus license could not be set. Please ensure EPPlus is properly installed and configured.", ex);
-            }
         }
 
         public string GetDiagnosticInfo()
@@ -113,39 +44,37 @@ namespace FireAlarmCircuitAnalysis
             
             // Check loaded assemblies
             var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
-            var epPlusAssembly = loadedAssemblies.FirstOrDefault(a => a.FullName.Contains("EPPlus"));
-            if (epPlusAssembly != null)
+            var npoiAssembly = loadedAssemblies.FirstOrDefault(a => a.FullName.Contains("NPOI"));
+            if (npoiAssembly != null)
             {
-                sb.AppendLine($"✓ EPPlus loaded: {epPlusAssembly.FullName}");
-                sb.AppendLine($"  Location: {epPlusAssembly.Location}");
+                sb.AppendLine($"✓ NPOI loaded: {npoiAssembly.FullName}");
+                sb.AppendLine($"  Location: {npoiAssembly.Location}");
             }
             else
             {
-                sb.AppendLine("✗ EPPlus assembly not found in loaded assemblies");
+                sb.AppendLine("✗ NPOI assembly not found in loaded assemblies");
             }
             
-            // Check EPPlus
+            // Check NPOI
             try
             {
-                // First check if EPPlus assembly can be loaded
-                var epPlusMainAssembly = typeof(ExcelPackage).Assembly;
-                sb.AppendLine($"✓ EPPlus Assembly: Version {epPlusMainAssembly.GetName().Version}");
+                // First check if NPOI assembly can be loaded
+                var npoiMainAssembly = typeof(XSSFWorkbook).Assembly;
+                sb.AppendLine($"✓ NPOI Assembly: Version {npoiMainAssembly.GetName().Version}");
                 
                 // Then test functionality
-                using (var testPackage = CreateExcelPackage())
-                {
-                    testPackage.Workbook.Worksheets.Add("Test");
-                    sb.AppendLine("✓ EPPlus: Functionality working");
-                }
+                var testWorkbook = new XSSFWorkbook();
+                testWorkbook.CreateSheet("Test");
+                sb.AppendLine("✓ NPOI: Functionality working");
             }
             catch (System.IO.FileNotFoundException ex)
             {
-                sb.AppendLine($"✗ EPPlus: Assembly not found - {ex.Message}");
+                sb.AppendLine($"✗ NPOI: Assembly not found - {ex.Message}");
                 sb.AppendLine("  Try rebuilding the solution or restoring NuGet packages");
             }
             catch (Exception ex)
             {
-                sb.AppendLine($"✗ EPPlus: Error - {ex.Message}");
+                sb.AppendLine($"✗ NPOI: Error - {ex.Message}");
                 if (ex.InnerException != null)
                 {
                     sb.AppendLine($"  Inner: {ex.InnerException.Message}");
@@ -349,32 +278,44 @@ namespace FireAlarmCircuitAnalysis
         {
             try
             {
-                // Ensure directory exists
-                var directory = Path.GetDirectoryName(filePath);
-                if (!Directory.Exists(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
+                // First test if NPOI can be loaded
+                var npoiType = typeof(XSSFWorkbook);
+                var assembly = npoiType.Assembly;
                 
-                using (var package = CreateExcelPackage())
+                var workbook = new XSSFWorkbook();
+                try
                 {
                     // Create sheets in specific order - FQQ IDNAC Designer format
-                    CreateParametersSheet(package);
-                    CreateFQQIDNACDesignerSheet(package);  // Combined FQQ IDNAC Designer and Circuit Layout
-                    CreateSummarySheet(package);
-                    CreateDeviceDetailsSheet(package);
-                    CreateCalculationsSheet(package);
+                    CreateParametersSheet(workbook);
+                    CreateFQQIDNACDesignerSheet(workbook);  // Combined FQQ IDNAC Designer and Circuit Layout
+                    CreateSummarySheet(workbook);
+                    CreateDeviceDetailsSheet(workbook);
+                    CreateCalculationsSheet(workbook);
+                    
+                    // Ensure directory exists
+                    var directory = Path.GetDirectoryName(filePath);
+                    if (!Directory.Exists(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
                     
                     // Save
-                    var file = new FileInfo(filePath);
-                    package.SaveAs(file);
+                    using (var fileStream = new FileStream(filePath, FileMode.Create))
+                    {
+                        workbook.Write(fileStream);
+                    }
                     return true;
                 }
+                finally
+                {
+                    // NPOI 2.5.6 XSSFWorkbook doesn't implement IDisposable, but we should still clean up
+                    workbook = null;
+                }
             }
-            catch (System.IO.FileNotFoundException ex) when (ex.Message.Contains("EPPlus"))
+            catch (System.IO.FileNotFoundException ex) when (ex.Message.Contains("NPOI"))
             {
                 TaskDialog.Show("Excel Export Error", 
-                    $"EPPlus library not found. Try using CSV export format instead.\n\nError: {ex.Message}");
+                    $"NPOI library not found. Try using CSV export format instead.\n\nError: {ex.Message}");
                 return false;
             }
             catch (Exception ex)
@@ -385,285 +326,309 @@ namespace FireAlarmCircuitAnalysis
             }
         }
 
-        private void CreateParametersSheet(ExcelPackage package)
+        private void CreateParametersSheet(IWorkbook workbook)
         {
-            var workbook = package.Workbook;
-            var sheet = workbook.Worksheets.Add("Parameters");
+            var sheet = workbook.CreateSheet("Parameters");
+            
+            // Create cell styles
+            var titleStyle = workbook.CreateCellStyle();
+            var titleFont = workbook.CreateFont();
+            titleFont.FontHeightInPoints = 14;
+            titleFont.IsBold = true;
+            titleStyle.SetFont(titleFont);
+            
+            var yellowStyle = workbook.CreateCellStyle();
+            yellowStyle.FillForegroundColor = HSSFColor.LightYellow.Index;
+            yellowStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+            
+            var boldStyle = workbook.CreateCellStyle();
+            var boldFont = workbook.CreateFont();
+            boldFont.IsBold = true;
+            boldStyle.SetFont(boldFont);
             
             // Title
-            sheet.Cells[1, 1].Value = "ADJUSTABLE CIRCUIT PARAMETERS";
-            sheet.Cells[1, 1].Style.Font.Size = 14;
-            sheet.Cells[1, 1].Style.Font.Bold = true;
-            sheet.Cells[1, 1, 1, 3].Merge = true;
+            var row0 = sheet.CreateRow(0);
+            var titleCell = row0.CreateCell(0);
+            titleCell.SetCellValue("ADJUSTABLE CIRCUIT PARAMETERS");
+            titleCell.CellStyle = titleStyle;
+            sheet.AddMergedRegion(new CellRangeAddress(0, 0, 0, 2));
             
             // System Parameters (adjustable)
-            int rowNum = 3;
+            int rowNum = 2;
             
-            sheet.Cells[rowNum, 1].Value = "System Voltage (VDC):";
-            sheet.Cells[rowNum, 2].Value = _report.Parameters.SystemVoltage;
-            sheet.Cells[rowNum, 2].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 2].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightYellow);
-            workbook.Names.Add("SystemVoltage", sheet.Cells[rowNum, 2]);
-            rowNum++;
+            var row3 = sheet.CreateRow(rowNum++);
+            row3.CreateCell(0).SetCellValue("System Voltage (VDC):");
+            var systemVoltageCell = row3.CreateCell(1);
+            systemVoltageCell.SetCellValue(_report.Parameters.SystemVoltage);
+            systemVoltageCell.CellStyle = yellowStyle;
+            workbook.CreateName().NameName = "SystemVoltage";
+            workbook.GetName("SystemVoltage").RefersToFormula = $"Parameters!$B${rowNum}";
             
-            sheet.Cells[rowNum, 1].Value = "Minimum Voltage (VDC):";
-            sheet.Cells[rowNum, 2].Value = _report.Parameters.MinVoltage;
-            sheet.Cells[rowNum, 2].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 2].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightYellow);
-            workbook.Names.Add("MinVoltage", sheet.Cells[rowNum, 2]);
-            rowNum++;
+            var row4 = sheet.CreateRow(rowNum++);
+            row4.CreateCell(0).SetCellValue("Minimum Voltage (VDC):");
+            var minVoltageCell = row4.CreateCell(1);
+            minVoltageCell.SetCellValue(_report.Parameters.MinVoltage);
+            minVoltageCell.CellStyle = yellowStyle;
+            workbook.CreateName().NameName = "MinVoltage";
+            workbook.GetName("MinVoltage").RefersToFormula = $"Parameters!$B${rowNum}";
             
-            sheet.Cells[rowNum, 1].Value = "Wire Gauge:";
-            sheet.Cells[rowNum, 2].Value = _report.Parameters.WireGauge;
-            sheet.Cells[rowNum, 3].Value = "Options: 18 AWG, 16 AWG, 14 AWG, 12 AWG";
-            rowNum++;
+            var row5 = sheet.CreateRow(rowNum++);
+            row5.CreateCell(0).SetCellValue("Wire Gauge:");
+            row5.CreateCell(1).SetCellValue(_report.Parameters.WireGauge);
+            row5.CreateCell(2).SetCellValue("Options: 18 AWG, 16 AWG, 14 AWG, 12 AWG");
             
-            sheet.Cells[rowNum, 1].Value = "Wire Resistance (Ω/1000ft):";
-            sheet.Cells[rowNum, 2].Value = _report.Parameters.Resistance;
-            sheet.Cells[rowNum, 2].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 2].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightYellow);
-            workbook.Names.Add("WireResistance", sheet.Cells[rowNum, 2]);
-            rowNum++;
+            var row6 = sheet.CreateRow(rowNum++);
+            row6.CreateCell(0).SetCellValue("Wire Resistance (Ω/1000ft):");
+            var resistanceCell = row6.CreateCell(1);
+            resistanceCell.SetCellValue(_report.Parameters.Resistance);
+            resistanceCell.CellStyle = yellowStyle;
+            workbook.CreateName().NameName = "WireResistance";
+            workbook.GetName("WireResistance").RefersToFormula = $"Parameters!$B${rowNum}";
             
-            sheet.Cells[rowNum, 1].Value = "Supply Distance (ft):";
-            sheet.Cells[rowNum, 2].Value = _report.Parameters.SupplyDistance;
-            sheet.Cells[rowNum, 2].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 2].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightYellow);
-            workbook.Names.Add("SupplyDistance", sheet.Cells[rowNum, 2]);
-            rowNum++;
+            var row7 = sheet.CreateRow(rowNum++);
+            row7.CreateCell(0).SetCellValue("Supply Distance (ft):");
+            var supplyDistanceCell = row7.CreateCell(1);
+            supplyDistanceCell.SetCellValue(_report.Parameters.SupplyDistance);
+            supplyDistanceCell.CellStyle = yellowStyle;
+            workbook.CreateName().NameName = "SupplyDistance";
+            workbook.GetName("SupplyDistance").RefersToFormula = $"Parameters!$B${rowNum}";
             
-            sheet.Cells[rowNum, 1].Value = "Routing Overhead Factor:";
-            sheet.Cells[rowNum, 2].Value = _report.Parameters.RoutingOverhead;
-            sheet.Cells[rowNum, 2].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 2].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightYellow);
-            workbook.Names.Add("RoutingOverhead", sheet.Cells[rowNum, 2]);
-            rowNum++;
+            var row8 = sheet.CreateRow(rowNum++);
+            row8.CreateCell(0).SetCellValue("Routing Overhead Factor:");
+            var routingCell = row8.CreateCell(1);
+            routingCell.SetCellValue(_report.Parameters.RoutingOverhead);
+            routingCell.CellStyle = yellowStyle;
+            workbook.CreateName().NameName = "RoutingOverhead";
+            workbook.GetName("RoutingOverhead").RefersToFormula = $"Parameters!$B${rowNum}";
             
-            sheet.Cells[rowNum, 1].Value = "Safety Reserved %:";
-            sheet.Cells[rowNum, 2].Value = _report.Parameters.SafetyPercent * 100;
-            sheet.Cells[rowNum, 2].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 2].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightYellow);
-            workbook.Names.Add("SafetyPercent", sheet.Cells[rowNum, 2]);
-            rowNum++;
-
-            sheet.Cells[rowNum, 1].Value = "Usable Load (A):";
-            sheet.Cells[rowNum, 2].Value = _report.Parameters.UsableLoad;
-            sheet.Cells[rowNum, 2].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 2].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightYellow);
-            workbook.Names.Add("UsableLoad", sheet.Cells[rowNum, 2]);
-            sheet.Cells[rowNum, 3].Value = "Maximum current capacity available for devices";
-            rowNum++;
-
-            sheet.Cells[rowNum, 1].Value = "Max Circuit Load (A):";
-            sheet.Cells[rowNum, 2].Value = _report.Parameters.MaxLoad;
-            sheet.Cells[rowNum, 2].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 2].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightYellow);
-            workbook.Names.Add("MaxLoad", sheet.Cells[rowNum, 2]);
-            sheet.Cells[rowNum, 3].Value = "Maximum allowable circuit load capacity";
-            rowNum++;
+            var row9 = sheet.CreateRow(rowNum++);
+            row9.CreateCell(0).SetCellValue("Safety Reserved %:");
+            var safetyCell = row9.CreateCell(1);
+            safetyCell.SetCellValue(_report.Parameters.SafetyPercent * 100);
+            safetyCell.CellStyle = yellowStyle;
+            workbook.CreateName().NameName = "SafetyPercent";
+            workbook.GetName("SafetyPercent").RefersToFormula = $"Parameters!$B${rowNum}";
             
             rowNum++; // Skip a row
             
             // Instructions
-            sheet.Cells[rowNum, 1].Value = "INSTRUCTIONS:";
-            sheet.Cells[rowNum, 1].Style.Font.Bold = true;
-            rowNum++;
+            var instructRow = sheet.CreateRow(rowNum++);
+            var instructCell = instructRow.CreateCell(0);
+            instructCell.SetCellValue("INSTRUCTIONS:");
+            instructCell.CellStyle = boldStyle;
             
-            sheet.Cells[rowNum, 1].Value = "Yellow cells are adjustable. Change these values to recalculate the circuit.\nVoltage drops, wire lengths, and data bars will update automatically in the IDNAC Table sheet.\nUsable Load controls the maximum scaling for current data bars and status thresholds.\nMax Circuit Load defines the absolute maximum allowable circuit capacity.";
-            sheet.Cells[rowNum, 1, rowNum + 2, 3].Merge = true;
-            sheet.Cells[rowNum, 1].Style.WrapText = true;
+            var instructRow2 = sheet.CreateRow(rowNum++);
+            instructRow2.CreateCell(0).SetCellValue("Yellow cells are adjustable. Change these values to recalculate the circuit.\nVoltage drops and wire lengths will update automatically in the Circuit Layout sheet.");
+            sheet.AddMergedRegion(new CellRangeAddress(rowNum-1, rowNum+1, 0, 2));
             
             // Format columns
-            sheet.Column(1).Width = 25;
-            sheet.Column(2).Width = 15;
-            sheet.Column(3).Width = 40;
+            sheet.SetColumnWidth(0, 25 * 256);
+            sheet.SetColumnWidth(1, 15 * 256);
+            sheet.SetColumnWidth(2, 40 * 256);
         }
 
-        private void CreateFQQIDNACDesignerSheet(ExcelPackage package)
+        private void CreateFQQIDNACDesignerSheet(IWorkbook workbook)
         {
-            var workbook = package.Workbook;
-            var sheet = workbook.Worksheets.Add("IDNAC Table");
+            var sheet = workbook.CreateSheet("IDNAC Table");
             
-            // Set default font for entire worksheet to Calibri
-            sheet.Cells.Style.Font.Name = "Calibri";
+            // FQQ-style cell formats
+            var headerStyle = workbook.CreateCellStyle();
+            var headerFont = workbook.CreateFont();
+            headerFont.IsBold = true;
+            headerFont.FontHeightInPoints = 9;
+            headerStyle.SetFont(headerFont);
+            headerStyle.FillForegroundColor = HSSFColor.Grey25Percent.Index;
+            headerStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+            headerStyle.Alignment = HorizontalAlignment.Center;
+            headerStyle.BorderBottom = BorderStyle.Thin;
+            headerStyle.BorderTop = BorderStyle.Thin;
+            headerStyle.BorderLeft = BorderStyle.Thin;
+            headerStyle.BorderRight = BorderStyle.Thin;
+            
+            var dataStyle = workbook.CreateCellStyle();
+            dataStyle.BorderBottom = BorderStyle.Thin;
+            dataStyle.BorderTop = BorderStyle.Thin;
+            dataStyle.BorderLeft = BorderStyle.Thin;
+            dataStyle.BorderRight = BorderStyle.Thin;
+            dataStyle.Alignment = HorizontalAlignment.Center;
+            
+            var yellowStyle = workbook.CreateCellStyle();
+            yellowStyle.FillForegroundColor = HSSFColor.Yellow.Index;
+            yellowStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+            yellowStyle.BorderBottom = BorderStyle.Thin;
+            yellowStyle.BorderTop = BorderStyle.Thin;
+            yellowStyle.BorderLeft = BorderStyle.Thin;
+            yellowStyle.BorderRight = BorderStyle.Thin;
+            yellowStyle.Alignment = HorizontalAlignment.Center;
+            
+            var altRowStyle = workbook.CreateCellStyle();
+            altRowStyle.FillForegroundColor = HSSFColor.LightGreen.Index;
+            altRowStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+            altRowStyle.BorderBottom = BorderStyle.Thin;
+            altRowStyle.BorderTop = BorderStyle.Thin;
+            altRowStyle.BorderLeft = BorderStyle.Thin;
+            altRowStyle.BorderRight = BorderStyle.Thin;
+            altRowStyle.Alignment = HorizontalAlignment.Center;
+            
+            // Number formats
+            var format2Decimal = workbook.CreateDataFormat();
+            var style2Decimal = workbook.CreateCellStyle();
+            style2Decimal.DataFormat = format2Decimal.GetFormat("0.00");
+            style2Decimal.BorderBottom = BorderStyle.Thin;
+            style2Decimal.BorderTop = BorderStyle.Thin;
+            style2Decimal.BorderLeft = BorderStyle.Thin;
+            style2Decimal.BorderRight = BorderStyle.Thin;
+            style2Decimal.Alignment = HorizontalAlignment.Center;
             
             // FQQ IDNAC Designer Headers (combined with Circuit Layout calculations)
+            var headerRow = sheet.CreateRow(0);
             string[] fqqHeaders = { 
-                "Element ID", "Item", "Panel Number", "Circuit Number", "Device Number", "Address", "Device Type", "Location", "SKU", "Candela", "Wattage", 
+                "Element ID", "Address", "Item", "Panel Number", "Circuit Number", "Device Number", "Device Type", "Location", "SKU", "Candela", "Wattage", 
                 "Distance (ft)", "Wire Gauge", "Device mA", "Current (A)", 
-                "Cumulative Distance (ft)", "Max Allowable Distance (ft)", "Cumulative Current (A)", "Voltage Drop (V)", "Voltage Drop %", 
+                "Cumulative Distance (ft)", "Cumulative Current (A)", "Max Allowable Distance (ft)", "Voltage Drop (V)", "Voltage Drop %", 
                 "Total Voltage Drop %", "Voltage at Device (V)", "Status", "Notes"
             };
             
-            // Add headers
             for (int i = 0; i < fqqHeaders.Length; i++)
             {
-                sheet.Cells[1, i + 1].Value = fqqHeaders[i];
-            }
-            
-            // Format header row with a darker gray that's distinct from alternating rows
-            using (var range = sheet.Cells[1, 1, 1, fqqHeaders.Length])
-            {
-                range.Style.Font.Name = "Calibri";
-                range.Style.Font.Bold = true;
-                range.Style.Font.Size = 9;
-                range.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                range.Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.FromArgb(191, 191, 191)); // Medium gray
-                range.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                range.Style.Border.Top.Style = ExcelBorderStyle.Thin;
-                range.Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
-                range.Style.Border.Left.Style = ExcelBorderStyle.Thin;
-                range.Style.Border.Right.Style = ExcelBorderStyle.Thin;
+                var cell = headerRow.CreateCell(i);
+                cell.SetCellValue(fqqHeaders[i]);
+                cell.CellStyle = headerStyle;
             }
             
             // Add device data
-            int dataRow = 2;  // Start at row 2 (after headers)
+            int dataRow = 1;
             int itemNum = 1;  // Starting with 1 as requested
-            AddFQQDevices(sheet, package, _circuitManager.RootNode, ref dataRow, ref itemNum);
+            AddFQQDevices(sheet, workbook, _circuitManager.RootNode, ref dataRow, ref itemNum,
+                         dataStyle, altRowStyle, yellowStyle, style2Decimal);
             
-            // Column widths for FQQ IDNAC Designer combined layout (updated for new order)
-            sheet.Column(1).Width = 12;   // Element ID
-            sheet.Column(2).Width = 8;    // Item
-            sheet.Column(3).Width = 12;   // Panel Number
-            sheet.Column(4).Width = 12;   // Circuit Number
-            sheet.Column(5).Width = 12;   // Device Number
-            sheet.Column(6).Width = 15;   // Address
-            sheet.Column(7).Width = 20;   // Device Type
-            sheet.Column(8).Width = 25;   // Location
-            sheet.Column(9).Width = 20;   // SKU
-            sheet.Column(10).Width = 10;  // Candela
-            sheet.Column(11).Width = 10;  // Wattage
-            sheet.Column(12).Width = 12;  // Distance (ft)
-            sheet.Column(13).Width = 12;  // Wire Gauge
-            sheet.Column(14).Width = 12;  // Device mA
-            sheet.Column(15).Width = 12;  // Current (A)
-            sheet.Column(16).Width = 18;  // Cumulative Distance (ft)
-            sheet.Column(17).Width = 18;  // Max Allowable Distance (ft)
-            sheet.Column(18).Width = 18;  // Cumulative Current (A)
-            sheet.Column(19).Width = 15;  // Voltage Drop (V)
-            sheet.Column(20).Width = 15;  // Voltage Drop %
-            sheet.Column(21).Width = 18;  // Total Voltage Drop %
-            sheet.Column(22).Width = 18;  // Voltage at Device (V)
-            sheet.Column(23).Width = 12;  // Status
-            sheet.Column(24).Width = 25;  // Notes
+            // Column widths for FQQ IDNAC Designer combined layout
+            sheet.SetColumnWidth(0, 12 * 256);  // Element ID
+            sheet.SetColumnWidth(1, 15 * 256);  // Address
+            sheet.SetColumnWidth(2, 8 * 256);   // Item
+            sheet.SetColumnWidth(3, 12 * 256);  // Panel Number
+            sheet.SetColumnWidth(4, 12 * 256);  // Circuit Number
+            sheet.SetColumnWidth(5, 12 * 256);  // Device Number
+            sheet.SetColumnWidth(6, 20 * 256);  // Device Type
+            sheet.SetColumnWidth(7, 25 * 256);  // Location
+            sheet.SetColumnWidth(8, 20 * 256);  // SKU
+            sheet.SetColumnWidth(9, 10 * 256);  // Candela
+            sheet.SetColumnWidth(10, 10 * 256); // Wattage
+            sheet.SetColumnWidth(11, 12 * 256); // Distance (ft)
+            sheet.SetColumnWidth(12, 12 * 256); // Wire Gauge
+            sheet.SetColumnWidth(13, 12 * 256); // Device mA
+            sheet.SetColumnWidth(14, 12 * 256); // Current (A)
+            sheet.SetColumnWidth(15, 18 * 256); // Cumulative Distance (ft)
+            sheet.SetColumnWidth(16, 18 * 256); // Cumulative Current (A)
+            sheet.SetColumnWidth(17, 18 * 256); // Max Allowable Distance (ft)
+            sheet.SetColumnWidth(18, 15 * 256); // Voltage Drop (V)
+            sheet.SetColumnWidth(19, 15 * 256); // Voltage Drop %
+            sheet.SetColumnWidth(20, 18 * 256); // Total Voltage Drop %
+            sheet.SetColumnWidth(21, 18 * 256); // Voltage at Device (V)
+            sheet.SetColumnWidth(22, 12 * 256); // Status
+            sheet.SetColumnWidth(23, 25 * 256); // Notes
             
             // Apply conditional formatting with data bars
             ApplyConditionalFormatting(sheet, dataRow - 1); // dataRow-1 because dataRow was incremented after last device
             
             // Freeze panes
-            sheet.View.FreezePanes(2, 1);
+            sheet.CreateFreezePane(0, 1);
         }
         
-        private void ApplyConditionalFormatting(ExcelWorksheet sheet, int lastRowNum)
+        private void ApplyConditionalFormatting(ISheet sheet, int lastRowNum)
         {
             try
             {
                 if (lastRowNum <= 1) return; // Need at least 2 rows (header + 1 data row)
                 
+                var sheetCF = sheet.SheetConditionalFormatting;
+                
                 // Calculate maximum values based on system parameters
                 var usableLoad = _report.Parameters.UsableLoad; // Usable load for current comparison
                 
-                // Apply distance conditional formatting
-                ApplyDistanceConditionalFormatting(sheet, lastRowNum);
+                // For distance, we need to calculate max allowable wire length based on load at each device
+                // We'll use a formula-based approach that compares actual vs max allowable wire length
                 
-                // Cumulative Current column (column R = index 18 in EPPlus 1-based)
-                var currentRange = sheet.Cells[2, 18, lastRowNum, 18];
+                // Create a complex conditional formatting rule for distance that uses formulas
+                // This will compare the actual cumulative distance against the max allowable distance for that current
+                ApplyDistanceConditionalFormatting(sheetCF, lastRowNum);
                 
-                // EPPlus data bar with exact specifications
-                var dataBar = sheet.ConditionalFormatting.AddDatabar(currentRange, System.Drawing.Color.FromArgb(0, 176, 80));
-                dataBar.ShowValue = true;
+                // Cumulative Current column (column Q = index 16) - compare against usable load
+                var currentRange = new CellRangeAddress(1, lastRowNum, 16, 16);
                 
-                // Maximum number: Reference to UsableLoad named range for dynamic adjustment
-                dataBar.HighValue.Type = eExcelConditionalFormattingValueObjectType.Formula;
-                dataBar.HighValue.Formula = "UsableLoad";
-                dataBar.LowValue.Type = eExcelConditionalFormattingValueObjectType.Num;
-                dataBar.LowValue.Value = 0;
+                // Try to create actual data bars first, with color scale as fallback
+                bool dataBarCreated = false;
                 
-                // Fill: Gradient Fill, Color: Green (RGB: 0, 176, 80)
-                dataBar.Color = System.Drawing.Color.FromArgb(0, 176, 80);
-                
-                // Check if gradient property exists, otherwise use solid fill
                 try 
                 {
-                    dataBar.Gradient = true;
+                    // Attempt to create real data bars using NPOI 2.5.6 API
+                    if (sheetCF is XSSFSheetConditionalFormatting xssfCF && sheet is XSSFSheet)
+                    {
+                        var dataBarColor = new XSSFColor(new byte[] { 0, 176, 80 }); // Green color
+                        var dataBarRule = xssfCF.CreateConditionalFormattingRule(dataBarColor);
+                        
+                        // The data bar is automatically created with MIN/MAX thresholds
+                        var dataBar = dataBarRule.DataBarFormatting;
+                        if (dataBar != null)
+                        {
+                            xssfCF.AddConditionalFormatting(new CellRangeAddress[] { currentRange }, dataBarRule);
+                            dataBarCreated = true;
+                            System.Diagnostics.Debug.WriteLine("Successfully created data bars for current column");
+                        }
+                    }
                 }
-                catch
+                catch (Exception dbEx)
                 {
-                    // Gradient property may not be available in this EPPlus version
-                    System.Diagnostics.Debug.WriteLine("Gradient property not available, using solid fill");
+                    System.Diagnostics.Debug.WriteLine($"Data bar creation failed: {dbEx.Message}");
                 }
                 
-                // Border: Solid Border, Color: Dark Green (RGB: 0, 100, 0)
-                try 
+                if (!dataBarCreated)
                 {
-                    dataBar.BorderColor.SetColor(System.Drawing.Color.FromArgb(0, 100, 0));
-                    dataBar.Border = true;
+                    try 
+                    {
+                        // Fallback to gradient based on percentage of usable load
+                        // This provides visual indication of how close we are to the limit
+                        
+                        // Critical (>90% of usable load) - Red
+                        var criticalRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0.9*UsableLoad");
+                        var criticalFormatting = criticalRule.CreatePatternFormatting();
+                        criticalFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.Rose.Index;
+                        criticalFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Warning (>70% of usable load) - Yellow
+                        var warningRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0.7*UsableLoad");
+                        var warningFormatting = warningRule.CreatePatternFormatting();
+                        warningFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightYellow.Index;
+                        warningFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Safe (<70% of usable load) - Green
+                        var safeRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0");
+                        var safeFormatting = safeRule.CreatePatternFormatting();
+                        safeFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightGreen.Index;
+                        safeFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Apply rules in order (high priority first)
+                        sheetCF.AddConditionalFormatting(new CellRangeAddress[] { currentRange }, 
+                            new IConditionalFormattingRule[] { criticalRule, warningRule, safeRule });
+                        System.Diagnostics.Debug.WriteLine("Used gradient simulation fallback for current column");
+                    }
+                    catch
+                    {
+                        // Final fallback to simple color formatting
+                        var currentRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0");
+                            
+                        var currentFormatting = currentRule.CreatePatternFormatting();
+                        currentFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightGreen.Index;
+                        currentFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        sheetCF.AddConditionalFormatting(new CellRangeAddress[] { currentRange }, new IConditionalFormattingRule[] { currentRule });
+                        System.Diagnostics.Debug.WriteLine("Used simple color fallback for current column");
+                    }
                 }
-                catch
-                {
-                    // Border properties may not be available in this EPPlus version
-                    System.Diagnostics.Debug.WriteLine("Border properties not available");
-                }
-                
-                // Also add color scale based on usable load percentage using dynamic references
-                // Critical (>90% of usable load) - Red background
-                var criticalRule = sheet.ConditionalFormatting.AddGreaterThan(currentRange);
-                criticalRule.Formula = "0.9*UsableLoad";
-                criticalRule.Style.Fill.BackgroundColor.Color = System.Drawing.Color.LightCoral;
-                criticalRule.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                criticalRule.Priority = 1;
-                
-                // Warning (>70% of usable load) - Yellow background
-                var warningRule = sheet.ConditionalFormatting.AddGreaterThan(currentRange);
-                warningRule.Formula = "0.7*UsableLoad";
-                warningRule.Style.Fill.BackgroundColor.Color = System.Drawing.Color.LightYellow;
-                warningRule.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                warningRule.Priority = 2;
-                
-                System.Diagnostics.Debug.WriteLine("Successfully created conditional formatting for current column");
-                
-                // Create data bar for Voltage at Device column (column V = index 22 in EPPlus 1-based)
-                var voltageRange = sheet.Cells[2, 22, lastRowNum, 22];
-                
-                // EPPlus data bar with same specifications as current data bar
-                var voltageDataBar = sheet.ConditionalFormatting.AddDatabar(voltageRange, System.Drawing.Color.FromArgb(0, 176, 80));
-                voltageDataBar.ShowValue = true;
-                
-                // Maximum number: System Voltage (full voltage)
-                voltageDataBar.HighValue.Type = eExcelConditionalFormattingValueObjectType.Formula;
-                voltageDataBar.HighValue.Formula = "SystemVoltage";
-                
-                // Minimum number: Reference to MinVoltage named range for dynamic adjustment
-                voltageDataBar.LowValue.Type = eExcelConditionalFormattingValueObjectType.Formula;
-                voltageDataBar.LowValue.Formula = "MinVoltage";
-                
-                // Fill: Gradient Fill, Color: Green (RGB: 0, 176, 80) - same as current data bar
-                voltageDataBar.Color = System.Drawing.Color.FromArgb(0, 176, 80);
-                
-                // Check if gradient property exists, otherwise use solid fill
-                try 
-                {
-                    voltageDataBar.Gradient = true;
-                }
-                catch
-                {
-                    // Gradient property may not be available in this EPPlus version
-                    System.Diagnostics.Debug.WriteLine("Voltage databar: Gradient property not available, using solid fill");
-                }
-                
-                // Border: Solid Border, Color: Dark Green (RGB: 0, 100, 0) - same as current data bar
-                try 
-                {
-                    voltageDataBar.BorderColor.SetColor(System.Drawing.Color.FromArgb(0, 100, 0));
-                    voltageDataBar.Border = true;
-                }
-                catch
-                {
-                    // Border properties may not be available in this EPPlus version
-                    System.Diagnostics.Debug.WriteLine("Voltage databar: Border properties not available");
-                }
-                
-                System.Diagnostics.Debug.WriteLine("Successfully created voltage data bar");
             }
             catch (Exception ex)
             {
@@ -672,67 +637,87 @@ namespace FireAlarmCircuitAnalysis
             }
         }
         
-        private void ApplyDistanceConditionalFormatting(ExcelWorksheet sheet, int lastRowNum)
+        private void ApplyDistanceConditionalFormatting(ISheetConditionalFormatting sheetCF, int lastRowNum)
         {
             try
             {
-                // Distance formatting - EPPlus supports data bars natively
-                // Column P (index 16 in EPPlus 1-based) - cumulative distance
-                var distanceRange = sheet.Cells[2, 16, lastRowNum, 16];
+                // Distance formatting - try data bars first, then fallback to color scale
+                // Each device will show how close it is to its maximum allowable wire length
                 
-                // Add data bar for distance with per-row max allowable distance
-                var dataBar = sheet.ConditionalFormatting.AddDatabar(distanceRange, System.Drawing.Color.FromArgb(68, 114, 196));
-                dataBar.ShowValue = true;
-                // Set max value to reference the Max Allowable Distance column (Q) for each row
-                dataBar.HighValue.Type = eExcelConditionalFormattingValueObjectType.Formula;
-                dataBar.HighValue.Formula = "$Q2"; // References column Q (Max Allowable Distance) for current row
-                dataBar.LowValue.Type = eExcelConditionalFormattingValueObjectType.Num;
-                dataBar.LowValue.Value = 0;
+                var distanceRange = new CellRangeAddress(1, lastRowNum, 15, 15); // Column P (cumulative distance)
+                bool dataBarCreated = false;
                 
-                // Fill: Blue color (RGB: 68, 114, 196)
-                dataBar.Color = System.Drawing.Color.FromArgb(68, 114, 196);
-                
-                // Check if gradient property exists, otherwise use solid fill
                 try 
                 {
-                    dataBar.Gradient = true;
+                    // Attempt to create real data bars for distance
+                    if (sheetCF is XSSFSheetConditionalFormatting xssfCF)
+                    {
+                        var dataBarColor = new XSSFColor(new byte[] { 68, 114, 196 }); // Blue color
+                        var dataBarRule = xssfCF.CreateConditionalFormattingRule(dataBarColor);
+                        
+                        // The data bar is automatically created with MIN/MAX thresholds
+                        var dataBar = dataBarRule.DataBarFormatting;
+                        if (dataBar != null)
+                        {
+                            xssfCF.AddConditionalFormatting(new CellRangeAddress[] { distanceRange }, dataBarRule);
+                            dataBarCreated = true;
+                            System.Diagnostics.Debug.WriteLine("Successfully created data bars for distance column");
+                        }
+                    }
                 }
-                catch
+                catch (Exception dbEx)
                 {
-                    // Gradient property may not be available in this EPPlus version
-                    System.Diagnostics.Debug.WriteLine("Distance databar: Gradient property not available, using solid fill");
+                    System.Diagnostics.Debug.WriteLine($"Distance data bar creation failed: {dbEx.Message}");
                 }
                 
-                // Border: Solid Border, Color: Dark Blue
-                try 
+                if (!dataBarCreated)
                 {
-                    dataBar.BorderColor.SetColor(System.Drawing.Color.DarkBlue);
-                    dataBar.Border = true;
+                    try 
+                    {
+                        // Fallback to gradient based on percentage of max allowable distance
+                        // Compare cumulative distance (P) against max allowable distance (R) for each row
+                        
+                        // Critical (>90% of max allowable) - Red
+                        // For each row, compare P(row) to R(row) - using OFFSET for row-relative comparison
+                        var criticalRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0.9*OFFSET($R$2,ROW()-2,0)");
+                        var criticalFormatting = criticalRule.CreatePatternFormatting();
+                        criticalFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.Rose.Index;
+                        criticalFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Warning (>70% of max allowable) - Yellow
+                        var warningRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0.7*OFFSET($R$2,ROW()-2,0)");
+                        var warningFormatting = warningRule.CreatePatternFormatting();
+                        warningFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightYellow.Index;
+                        warningFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Safe (<70% of max allowable) - Green
+                        var safeRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0");
+                        var safeFormatting = safeRule.CreatePatternFormatting();
+                        safeFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightGreen.Index;
+                        safeFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        // Apply rules in order (high priority first)
+                        sheetCF.AddConditionalFormatting(new CellRangeAddress[] { distanceRange }, 
+                            new IConditionalFormattingRule[] { criticalRule, warningRule, safeRule });
+                        System.Diagnostics.Debug.WriteLine("Used gradient simulation fallback for distance column");
+                    }
+                    catch
+                    {
+                        // Final fallback to simple color formatting
+                        var distanceRule = sheetCF.CreateConditionalFormattingRule(
+                            ComparisonOperator.GreaterThan, "0");
+                            
+                        var distanceFormatting = distanceRule.CreatePatternFormatting();
+                        distanceFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightBlue.Index;
+                        distanceFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                        
+                        sheetCF.AddConditionalFormatting(new CellRangeAddress[] { distanceRange }, new IConditionalFormattingRule[] { distanceRule });
+                        System.Diagnostics.Debug.WriteLine("Used simple color fallback for distance column");
+                    }
                 }
-                catch
-                {
-                    // Border properties may not be available in this EPPlus version
-                    System.Diagnostics.Debug.WriteLine("Distance databar: Border properties not available");
-                }
-                
-                // Add formula-based formatting comparing to max allowable distance
-                // Critical (>90% of max allowable) - Red
-                var criticalRule = sheet.ConditionalFormatting.AddExpression(distanceRange);
-                criticalRule.Formula = "$P2>0.9*$Q2";
-                criticalRule.Style.Fill.BackgroundColor.Color = System.Drawing.Color.LightCoral;
-                criticalRule.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                criticalRule.Priority = 1;
-                criticalRule.StopIfTrue = true;
-                
-                // Warning (>70% of max allowable) - Yellow
-                var warningRule = sheet.ConditionalFormatting.AddExpression(distanceRange);
-                warningRule.Formula = "$P2>0.7*$Q2";
-                warningRule.Style.Fill.BackgroundColor.Color = System.Drawing.Color.LightYellow;
-                warningRule.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                warningRule.Priority = 2;
-                warningRule.StopIfTrue = true;
-                
-                System.Diagnostics.Debug.WriteLine("Successfully created data bars and conditional formatting for distance column");
             }
             catch (Exception ex)
             {
@@ -762,45 +747,63 @@ namespace FireAlarmCircuitAnalysis
             }
         }
         
-        private void AddFQQDevices(ExcelWorksheet sheet, ExcelPackage package, CircuitNode node, ref int rowNum, 
-                           ref int itemNum)
+        private void AddFQQDevices(ISheet sheet, IWorkbook workbook, CircuitNode node, ref int rowNum, 
+                           ref int itemNum, ICellStyle dataStyle, ICellStyle altRowStyle, 
+                           ICellStyle yellowStyle, ICellStyle style2Decimal)
         {
             if (node.NodeType == "Root")
             {
                 foreach (var child in node.Children)
                 {
-                    AddFQQDevices(sheet, package, child, ref rowNum, ref itemNum);
+                    AddFQQDevices(sheet, workbook, child, ref rowNum, ref itemNum, 
+                                 dataStyle, altRowStyle, yellowStyle, style2Decimal);
                 }
             }
             else if (node.NodeType == "Device" && node.DeviceData != null)
             {
+                var row = sheet.CreateRow(rowNum);
                 bool isAlternateRow = (rowNum % 2 == 0);
+                var rowStyle = isAlternateRow ? altRowStyle : dataStyle;
                 
                 // 0. Element ID - First column
-                sheet.Cells[rowNum, 1].Value = GetParameterValue(node, "ElementId", node.DeviceData?.Element?.Id?.ToString() ?? "N/A");
+                var elementIdCell = row.CreateCell(0);
+                elementIdCell.SetCellValue(GetParameterValue(node, "ElementId", node.DeviceData?.Element?.Id?.ToString() ?? "N/A"));
+                elementIdCell.CellStyle = rowStyle;
                 
-                // 1. Item - Sequential number starting with 1 (moved from position 3)
-                sheet.Cells[rowNum, 2].Value = itemNum;
+                // 1. Address - Second column from "ICP_CIRCUIT_ADDRESS" parameter
+                var addressCell = row.CreateCell(1);
+                addressCell.SetCellValue(GetParameterValue(node, "ICP_CIRCUIT_ADDRESS", "N/A"));
+                addressCell.CellStyle = rowStyle;
                 
-                // 2. Panel Number - from "CAB#" parameter or extracted from address (moved from position 4)
+                // 2. Item - Sequential number starting with 1
+                var itemCell = row.CreateCell(2);
+                itemCell.SetCellValue(itemNum);
+                itemCell.CellStyle = rowStyle;
+                
+                // 3. Panel Number - from "CAB#" parameter or extracted from address
+                var panelCell = row.CreateCell(3);
                 var panelNumber = GetParameterValue(node, "CAB#", "");
                 if (string.IsNullOrEmpty(panelNumber) || panelNumber == "N/A")
                 {
                     var addressValue = GetParameterValue(node, "ICP_CIRCUIT_ADDRESS", "");
                     panelNumber = ExtractPanelNumberFromAddress(addressValue);
                 }
-                sheet.Cells[rowNum, 3].Value = panelNumber;
+                panelCell.SetCellValue(panelNumber);
+                panelCell.CellStyle = rowStyle;
                 
-                // 3. Circuit Number - from "CKT#" parameter or extracted from address (moved from position 5)
+                // 4. Circuit Number - from "CKT#" parameter or extracted from address
+                var circuitCell = row.CreateCell(4);
                 var circuitNumber = GetParameterValue(node, "CKT#", "");
                 if (string.IsNullOrEmpty(circuitNumber) || circuitNumber == "N/A")
                 {
                     var addressValue = GetParameterValue(node, "ICP_CIRCUIT_ADDRESS", "");
                     circuitNumber = ExtractCircuitNumberFromAddress(addressValue);
                 }
-                sheet.Cells[rowNum, 4].Value = circuitNumber;
+                circuitCell.SetCellValue(circuitNumber);
+                circuitCell.CellStyle = rowStyle;
                 
-                // 4. Device Number - from "MODD ADD" parameter or extracted from address (moved from position 6)
+                // 5. Device Number - from "MODD ADD" parameter or extracted from address
+                var deviceNumCell = row.CreateCell(5);
                 var deviceNumber = GetParameterValue(node, "MODD ADD", "");
                 if (string.IsNullOrEmpty(deviceNumber) || deviceNumber == "N/A")
                 {
@@ -811,153 +814,123 @@ namespace FireAlarmCircuitAnalysis
                         deviceNumber = node.SequenceNumber.ToString();
                     }
                 }
-                sheet.Cells[rowNum, 5].Value = deviceNumber;
-                
-                // 5. Address - from "ICP_CIRCUIT_ADDRESS" parameter (moved from position 2)
-                sheet.Cells[rowNum, 6].Value = GetParameterValue(node, "ICP_CIRCUIT_ADDRESS", "N/A");
+                deviceNumCell.SetCellValue(deviceNumber);
+                deviceNumCell.CellStyle = rowStyle;
                 
                 // 6. Device Type - from Description parameter in family type Identity Data
+                var deviceTypeCell = row.CreateCell(6);
                 var deviceTypeName = GetParameterValue(node, "Description", "N/A");
                 if (deviceTypeName != "N/A")
                 {
                     deviceTypeName = deviceTypeName.Replace("NOTIFICATION", "").Trim();
                 }
-                sheet.Cells[rowNum, 7].Value = deviceTypeName;
+                deviceTypeCell.SetCellValue(deviceTypeName);
+                deviceTypeCell.CellStyle = rowStyle;
                 
                 // 7. Location - from AREA_DESCRIPTION shared parameter
-                sheet.Cells[rowNum, 8].Value = GetParameterValue(node, "AREA_DESCRIPTION", "N/A");
+                var locationCell = row.CreateCell(7);
+                locationCell.SetCellValue(GetParameterValue(node, "AREA_DESCRIPTION", "N/A"));
+                locationCell.CellStyle = rowStyle;
                 
-                // 8. SKU - from Model parameter in family type Identity Data (no change)
+                // 8. SKU - from Model parameter in family type Identity Data
+                var skuCell = row.CreateCell(8);
                 var skuValue = GetParameterValue(node, "Model", "N/A");
-                sheet.Cells[rowNum, 9].Value = skuValue;
+                skuCell.SetCellValue(skuValue);
+                skuCell.CellStyle = rowStyle;
                 
                 // 9. Candela - from "CANDELA" parameter
-                sheet.Cells[rowNum, 10].Value = GetParameterValue(node, "CANDELA", "N/A");
+                var candelaCell = row.CreateCell(9);
+                candelaCell.SetCellValue(GetParameterValue(node, "CANDELA", "N/A"));
+                candelaCell.CellStyle = rowStyle;
                 
                 // 10. Wattage - from "Wattage" parameter
-                sheet.Cells[rowNum, 11].Value = GetParameterValue(node, "Wattage", "N/A");
+                var wattageCell = row.CreateCell(10);
+                wattageCell.SetCellValue(GetParameterValue(node, "Wattage", "N/A"));
+                wattageCell.CellStyle = rowStyle;
                 
                 // 11. Distance (ft) - adjustable distance to next device
-                sheet.Cells[rowNum, 12].Value = node.DistanceFromParent > 0 ? Math.Round(node.DistanceFromParent, 2) : 0;
-                sheet.Cells[rowNum, 12].Style.Fill.PatternType = ExcelFillStyle.Solid;
-                sheet.Cells[rowNum, 12].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.Yellow);
+                var distanceCell = row.CreateCell(11);
+                distanceCell.SetCellValue(node.DistanceFromParent > 0 ? Math.Round(node.DistanceFromParent, 2) : 0);
+                distanceCell.CellStyle = yellowStyle; // Make it editable
                 
                 // 12. Wire Gauge - from selected wire gauge
-                sheet.Cells[rowNum, 13].Value = _circuitManager.Parameters.WireGauge ?? "N/A";
+                var gaugeCell = row.CreateCell(12);
+                gaugeCell.SetCellValue(_circuitManager.Parameters.WireGauge ?? "N/A");
+                gaugeCell.CellStyle = rowStyle;
                 
                 // 13. Device mA - from "CURRENT DRAW" parameter (editable)
+                var devicemACell = row.CreateCell(13);
                 var currentDrawValue = GetParameterValueAsDouble(node, "CURRENT DRAW", node.DeviceData.Current.Alarm * 1000);
-                sheet.Cells[rowNum, 14].Value = currentDrawValue > 0 ? Math.Round(currentDrawValue, 2) : 0;
-                sheet.Cells[rowNum, 14].Style.Fill.PatternType = ExcelFillStyle.Solid;
-                sheet.Cells[rowNum, 14].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.Yellow);
+                devicemACell.SetCellValue(currentDrawValue > 0 ? Math.Round(currentDrawValue, 2) : 0);
+                devicemACell.CellStyle = yellowStyle; // Make it editable
                 
-                // 14. Current (A) - formula: =N{rowNum}/1000
-                sheet.Cells[rowNum, 15].Formula = $"=N{rowNum}/1000";
-                sheet.Cells[rowNum, 15].Style.Numberformat.Format = "0.000";
+                // 14. Current (A) - formula: =N{rowNum+1}/1000
+                var currentCell = row.CreateCell(14);
+                currentCell.SetCellFormula($"N{rowNum+1}/1000");
+                currentCell.CellStyle = style2Decimal;
                 
-                // 15. Cumulative Distance (ft) - formula: =SUM($L$2:L{rowNum})*RoutingOverhead
-                var routingOverhead = _circuitManager.Parameters.RoutingOverhead;
-                if (rowNum == 2) // First device
+                // 15. Cumulative Distance (ft) - formula: =SUM($L$2:L{rowNum+1})*RoutingOverhead
+                var cumDistanceCell = row.CreateCell(15);
+                if (rowNum == 1) // First device
                 {
-                    sheet.Cells[rowNum, 16].Formula = $"=L{rowNum}*{routingOverhead}";
+                    cumDistanceCell.SetCellFormula($"L{rowNum+1}*RoutingOverhead");
                 }
                 else
                 {
-                    sheet.Cells[rowNum, 16].Formula = $"=P{rowNum-1}+L{rowNum}*{routingOverhead}";
+                    cumDistanceCell.SetCellFormula($"P{rowNum}+L{rowNum+1}*RoutingOverhead");
                 }
-                sheet.Cells[rowNum, 16].Style.Numberformat.Format = "0.00";
+                cumDistanceCell.CellStyle = style2Decimal;
                 
-                // 17. Max Allowable Distance (ft) - formula: =(SystemVoltage-MinVoltage)/(2*R{rowNum}*WireResistance/1000)
-                var systemVoltage = _circuitManager.Parameters.SystemVoltage;
-                var minVoltage = _circuitManager.Parameters.MinVoltage;
-                var wireResistance = _circuitManager.Parameters.Resistance;
-                sheet.Cells[rowNum, 17].Formula = $"=({systemVoltage}-{minVoltage})/(2*R{rowNum}*{wireResistance}/1000)";
-                sheet.Cells[rowNum, 17].Style.Numberformat.Format = "0.00";
+                // 16. Cumulative Current (A) - formula: =SUM($O$2:O{rowNum+1})
+                var cumCurrentCell = row.CreateCell(16);
+                cumCurrentCell.SetCellFormula($"SUM($O$2:O{rowNum+1})");
+                cumCurrentCell.CellStyle = style2Decimal;
                 
-                // 18. Cumulative Current (A) - formula: =SUM($O$2:O{rowNum})
-                sheet.Cells[rowNum, 18].Formula = $"=SUM($O$2:O{rowNum})";
-                sheet.Cells[rowNum, 18].Style.Numberformat.Format = "0.000";
+                // 17. Max Allowable Distance (ft) - formula: =(SystemVoltage-MinVoltage)/(2*Q{rowNum+1}*WireResistance/1000)
+                var maxAllowableDistanceCell = row.CreateCell(17);
+                maxAllowableDistanceCell.SetCellFormula($"(SystemVoltage-MinVoltage)/(2*Q{rowNum+1}*WireResistance/1000)");
+                maxAllowableDistanceCell.CellStyle = style2Decimal;
                 
-                // 19. Voltage Drop (V) - formula: =R{rowNum}*2*L{rowNum}*WireResistance/1000
-                sheet.Cells[rowNum, 19].Formula = $"=R{rowNum}*2*L{rowNum}*{wireResistance}/1000";
-                sheet.Cells[rowNum, 19].Style.Numberformat.Format = "0.00";
+                // 18. Voltage Drop (V) - formula: =Q{rowNum+1}*2*L{rowNum+1}*WireResistance/1000
+                var voltDropCell = row.CreateCell(18);
+                voltDropCell.SetCellFormula($"Q{rowNum+1}*2*L{rowNum+1}*WireResistance/1000");
+                voltDropCell.CellStyle = style2Decimal;
                 
-                // 19. Voltage Drop % - formula: =S{rowNum}/SystemVoltage*100
-                sheet.Cells[rowNum, 20].Formula = $"=S{rowNum}/{systemVoltage}*100";
-                sheet.Cells[rowNum, 20].Style.Numberformat.Format = "0.00";
+                // 19. Voltage Drop % - formula: =S{rowNum+1}/SystemVoltage*100
+                var voltDropPercentCell = row.CreateCell(19);
+                voltDropPercentCell.SetCellFormula($"S{rowNum+1}/SystemVoltage*100");
+                voltDropPercentCell.CellStyle = style2Decimal;
                 
-                // 20. Total Voltage Drop % - formula: =(SystemVoltage-V{rowNum})/SystemVoltage*100
-                sheet.Cells[rowNum, 21].Formula = $"=({systemVoltage}-V{rowNum})/{systemVoltage}*100";
-                sheet.Cells[rowNum, 21].Style.Numberformat.Format = "0.00";
+                // 20. Total Voltage Drop % - formula: =(SystemVoltage-V{rowNum+1})/SystemVoltage*100
+                var totalDropCell = row.CreateCell(20);
+                totalDropCell.SetCellFormula($"(SystemVoltage-V{rowNum+1})/SystemVoltage*100");
+                totalDropCell.CellStyle = style2Decimal;
                 
-                // 21. Voltage at Device (V) - formula: =SystemVoltage-SUM($S$2:S{rowNum})
-                if (rowNum == 2) // First device
+                // 21. Voltage at Device (V) - formula: =SystemVoltage-SUM($S$2:S{rowNum+1})
+                var voltsCell = row.CreateCell(21);
+                if (rowNum == 1) // First device
                 {
-                    sheet.Cells[rowNum, 22].Formula = $"={systemVoltage}-S{rowNum}";
+                    voltsCell.SetCellFormula($"SystemVoltage-S{rowNum+1}");
                 }
                 else
                 {
-                    sheet.Cells[rowNum, 22].Formula = $"=V{rowNum-1}-S{rowNum}";
+                    voltsCell.SetCellFormula($"V{rowNum}-S{rowNum+1}");
                 }
-                sheet.Cells[rowNum, 22].Style.Numberformat.Format = "0.00";
+                voltsCell.CellStyle = style2Decimal;
                 
                 // 22. Status - formula: Check both voltage and current against limits
+                var statusCell = row.CreateCell(22);
                 // IF cumulative current > usable load => "EXCEEDS LOAD"
                 // ELSE IF voltage < min voltage => "LOW VOLTAGE"  
                 // ELSE IF cumulative current > 0.9 * usable load => "NEAR LIMIT"
                 // ELSE "OK"
-                // Use named ranges for dynamic adjustment (now that UsableLoad is properly defined)
-                sheet.Cells[rowNum, 23].Formula = $"=IF(R{rowNum}>UsableLoad,\"EXCEEDS LOAD\",IF(V{rowNum}<{minVoltage},\"LOW VOLTAGE\",IF(R{rowNum}>0.9*UsableLoad,\"NEAR LIMIT\",\"OK\")))";
+                statusCell.SetCellFormula($"IF(Q{rowNum+1}>UsableLoad,\"EXCEEDS LOAD\",IF(V{rowNum+1}<MinVoltage,\"LOW VOLTAGE\",IF(Q{rowNum+1}>0.9*UsableLoad,\"NEAR LIMIT\",\"OK\")))");
+                statusCell.CellStyle = rowStyle;
                 
                 // 23. Notes - editable field for user notes
-                sheet.Cells[rowNum, 24].Value = "N/A";
-                sheet.Cells[rowNum, 24].Style.Fill.PatternType = ExcelFillStyle.Solid;
-                sheet.Cells[rowNum, 24].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.Yellow);
-                
-                // Apply row styling but exclude editable columns (12=Distance, 14=Device mA, 24=Notes)
-                // First apply to all columns
-                using (var range = sheet.Cells[rowNum, 1, rowNum, 24])
-                {
-                    range.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                    range.Style.Border.Top.Style = ExcelBorderStyle.Thin;
-                    range.Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
-                    range.Style.Border.Left.Style = ExcelBorderStyle.Thin;
-                    range.Style.Border.Right.Style = ExcelBorderStyle.Thin;
-                }
-                
-                // Apply alternating row colors only to non-editable columns
-                if (isAlternateRow)
-                {
-                    // Use a light gray color that doesn't interfere with data bars and yellow cells
-                    var alternateRowColor = System.Drawing.Color.FromArgb(242, 242, 242); // Very light gray
-                    
-                    // Columns 1-11 (before Distance)
-                    using (var range1 = sheet.Cells[rowNum, 1, rowNum, 11])
-                    {
-                        range1.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                        range1.Style.Fill.BackgroundColor.SetColor(alternateRowColor);
-                    }
-                    // Column 13 (Wire Gauge - between Distance and Device mA)
-                    using (var range2 = sheet.Cells[rowNum, 13, rowNum, 13])
-                    {
-                        range2.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                        range2.Style.Fill.BackgroundColor.SetColor(alternateRowColor);
-                    }
-                    // Columns 15-23 (after Device mA, before Notes)
-                    using (var range3 = sheet.Cells[rowNum, 15, rowNum, 23])
-                    {
-                        range3.Style.Fill.PatternType = ExcelFillStyle.Solid;
-                        range3.Style.Fill.BackgroundColor.SetColor(alternateRowColor);
-                    }
-                }
-                
-                // Ensure yellow background is preserved for editable columns
-                sheet.Cells[rowNum, 12].Style.Fill.PatternType = ExcelFillStyle.Solid;
-                sheet.Cells[rowNum, 12].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.Yellow);
-                sheet.Cells[rowNum, 14].Style.Fill.PatternType = ExcelFillStyle.Solid;
-                sheet.Cells[rowNum, 14].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.Yellow);
-                sheet.Cells[rowNum, 24].Style.Fill.PatternType = ExcelFillStyle.Solid;
-                sheet.Cells[rowNum, 24].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.Yellow);
+                var notesCell = row.CreateCell(23);
+                notesCell.SetCellValue("N/A");
+                notesCell.CellStyle = yellowStyle; // Make it editable
                 
                 itemNum++;
                 rowNum++;
@@ -965,7 +938,8 @@ namespace FireAlarmCircuitAnalysis
                 // Process children
                 foreach (var child in node.Children)
                 {
-                    AddFQQDevices(sheet, package, child, ref rowNum, ref itemNum);
+                    AddFQQDevices(sheet, workbook, child, ref rowNum, ref itemNum, 
+                                 dataStyle, altRowStyle, yellowStyle, style2Decimal);
                 }
             }
         }
@@ -1121,125 +1095,193 @@ namespace FireAlarmCircuitAnalysis
         }
 
 
-        private void CreateSummarySheet(ExcelPackage package)
+        private void CreateSummarySheet(IWorkbook workbook)
         {
-            var workbook = package.Workbook;
-            var sheet = workbook.Worksheets.Add("Summary");
+            var sheet = workbook.CreateSheet("Summary");
+            
+            // Create cell styles
+            var titleStyle = workbook.CreateCellStyle();
+            var titleFont = workbook.CreateFont();
+            titleFont.FontHeightInPoints = 14;
+            titleFont.IsBold = true;
+            titleStyle.SetFont(titleFont);
+            
+            var boldStyle = workbook.CreateCellStyle();
+            var boldFont = workbook.CreateFont();
+            boldFont.IsBold = true;
+            boldStyle.SetFont(boldFont);
+            
+            var headerStyle = workbook.CreateCellStyle();
+            headerStyle.FillForegroundColor = HSSFColor.LightBlue.Index;
+            headerStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+            headerStyle.SetFont(boldFont);
+            
+            // Number formats
+            var format3Decimal = workbook.CreateDataFormat();
+            var style3Decimal = workbook.CreateCellStyle();
+            style3Decimal.DataFormat = format3Decimal.GetFormat("0.000");
+            
+            var format1Decimal = workbook.CreateDataFormat();
+            var style1Decimal = workbook.CreateCellStyle();
+            style1Decimal.DataFormat = format1Decimal.GetFormat("0.0");
+            
+            var format2Decimal = workbook.CreateDataFormat();
+            var style2Decimal = workbook.CreateCellStyle();
+            style2Decimal.DataFormat = format2Decimal.GetFormat("0.00");
+            
+            var formatPercent = workbook.CreateDataFormat();
+            var stylePercent = workbook.CreateCellStyle();
+            stylePercent.DataFormat = formatPercent.GetFormat("0%");
+            
+            var formatPercent1 = workbook.CreateDataFormat();
+            var stylePercent1 = workbook.CreateCellStyle();
+            stylePercent1.DataFormat = formatPercent1.GetFormat("0.0%");
             
             // Title
-            sheet.Cells[1, 1].Value = "CIRCUIT ANALYSIS SUMMARY";
-            sheet.Cells[1, 1].Style.Font.Size = 14;
-            sheet.Cells[1, 1].Style.Font.Bold = true;
-            sheet.Cells[1, 1, 1, 3].Merge = true;
+            var row0 = sheet.CreateRow(0);
+            var titleCell = row0.CreateCell(0);
+            titleCell.SetCellValue("CIRCUIT ANALYSIS SUMMARY");
+            titleCell.CellStyle = titleStyle;
+            sheet.AddMergedRegion(new CellRangeAddress(0, 0, 0, 2));
             
-            int rowNum = 3;
+            int rowNum = 2;
             
             // Key Results with Formulas
-            sheet.Cells[rowNum, 1].Value = "KEY RESULTS";
-            sheet.Cells[rowNum, 1].Style.Font.Bold = true;
-            sheet.Cells[rowNum, 1].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 1].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightBlue);
-            sheet.Cells[rowNum, 1, rowNum, 2].Merge = true;
-            rowNum++;
+            var keyRow = sheet.CreateRow(rowNum++);
+            var keyCell = keyRow.CreateCell(0);
+            keyCell.SetCellValue("KEY RESULTS");
+            keyCell.CellStyle = headerStyle;
+            sheet.AddMergedRegion(new CellRangeAddress(rowNum-1, rowNum-1, 0, 1));
             
-            sheet.Cells[rowNum, 1].Value = "Total Devices:";
-            sheet.Cells[rowNum, 2].Formula = "=COUNTA('IDNAC Table'!H:H)-1";
-            rowNum++;
+            var devicesRow = sheet.CreateRow(rowNum++);
+            devicesRow.CreateCell(0).SetCellValue("Total Devices:");
+            var devicesCell = devicesRow.CreateCell(1);
+            devicesCell.SetCellFormula("COUNTA('IDNAC Table'!H:H)-1");
             
-            sheet.Cells[rowNum, 1].Value = "Total Alarm Load (A):";
-            sheet.Cells[rowNum, 2].Formula = "=SUM('IDNAC Table'!Q:Q)";
-            sheet.Cells[rowNum, 2].Style.Numberformat.Format = "0.000";
-            rowNum++;
+            var loadRow = sheet.CreateRow(rowNum++);
+            loadRow.CreateCell(0).SetCellValue("Total Alarm Load (A):");
+            var loadCell = loadRow.CreateCell(1);
+            loadCell.SetCellFormula("SUM('IDNAC Table'!Q:Q)");
+            loadCell.CellStyle = style3Decimal;
             
-            sheet.Cells[rowNum, 1].Value = "Maximum Wire Distance (ft):";
-            sheet.Cells[rowNum, 2].Formula = "=MAX('IDNAC Table'!P:P)";
-            sheet.Cells[rowNum, 2].Style.Numberformat.Format = "0.0";
-            rowNum++;
+            var distanceRow = sheet.CreateRow(rowNum++);
+            distanceRow.CreateCell(0).SetCellValue("Maximum Wire Distance (ft):");
+            var distanceCell = distanceRow.CreateCell(1);
+            distanceCell.SetCellFormula("MAX('IDNAC Table'!P:P)");
+            distanceCell.CellStyle = style1Decimal;
             
-            sheet.Cells[rowNum, 1].Value = "Maximum Voltage Drop (V):";
-            sheet.Cells[rowNum, 2].Formula = "=SystemVoltage-MIN('IDNAC Table'!V:V)";
-            sheet.Cells[rowNum, 2].Style.Numberformat.Format = "0.00";
-            rowNum++;
+            var dropRow = sheet.CreateRow(rowNum++);
+            dropRow.CreateCell(0).SetCellValue("Maximum Voltage Drop (V):");
+            var dropCell = dropRow.CreateCell(1);
+            dropCell.SetCellFormula("SystemVoltage-MIN('IDNAC Table'!V:V)");
+            dropCell.CellStyle = style2Decimal;
             
-            sheet.Cells[rowNum, 1].Value = "End-of-Line Voltage (V):";
-            sheet.Cells[rowNum, 2].Formula = "=MIN('IDNAC Table'!V:V)";
-            sheet.Cells[rowNum, 2].Style.Numberformat.Format = "0.00";
-            rowNum++;
+            var eolRow = sheet.CreateRow(rowNum++);
+            eolRow.CreateCell(0).SetCellValue("End-of-Line Voltage (V):");
+            var eolCell = eolRow.CreateCell(1);
+            eolCell.SetCellFormula("MIN('IDNAC Table'!V:V)");
+            eolCell.CellStyle = style2Decimal;
             
-            sheet.Cells[rowNum, 1].Value = "Circuit Status:";
-            sheet.Cells[rowNum, 2].Formula = "=IF(MIN('IDNAC Table'!V:V)>=MinVoltage,\"PASS\",\"FAIL\")";
-            sheet.Cells[rowNum, 2].Style.Font.Bold = true;
-            rowNum++;
+            var statusRow = sheet.CreateRow(rowNum++);
+            statusRow.CreateCell(0).SetCellValue("Circuit Status:");
+            var statusCell = statusRow.CreateCell(1);
+            statusCell.SetCellFormula("IF(MIN('IDNAC Table'!V:V)>=MinVoltage,\"PASS\",\"FAIL\")");
+            statusCell.CellStyle = boldStyle;
             
             rowNum++; // Skip row
             
             // Load Analysis
-            sheet.Cells[rowNum, 1].Value = "LOAD ANALYSIS";
-            sheet.Cells[rowNum, 1].Style.Font.Bold = true;
-            sheet.Cells[rowNum, 1].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 1].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightBlue);
-            sheet.Cells[rowNum, 1, rowNum, 2].Merge = true;
-            rowNum++;
+            var loadAnalysisRow = sheet.CreateRow(rowNum++);
+            var loadAnalysisCell = loadAnalysisRow.CreateCell(0);
+            loadAnalysisCell.SetCellValue("LOAD ANALYSIS");
+            loadAnalysisCell.CellStyle = headerStyle;
+            sheet.AddMergedRegion(new CellRangeAddress(rowNum-1, rowNum-1, 0, 1));
             
-            sheet.Cells[rowNum, 1].Value = "Maximum Allowed Load (A):";
-            sheet.Cells[rowNum, 2].Value = _report.Parameters.MaxLoad;
-            rowNum++;
+            var maxLoadRow = sheet.CreateRow(rowNum++);
+            maxLoadRow.CreateCell(0).SetCellValue("Maximum Allowed Load (A):");
+            maxLoadRow.CreateCell(1).SetCellValue(_report.Parameters.MaxLoad);
             
-            sheet.Cells[rowNum, 1].Value = "Safety Reserved %:";
-            sheet.Cells[rowNum, 2].Formula = "=SafetyPercent";
-            sheet.Cells[rowNum, 2].Style.Numberformat.Format = "0%";
-            rowNum++;
+            var safetyRow = sheet.CreateRow(rowNum++);
+            safetyRow.CreateCell(0).SetCellValue("Safety Reserved %:");
+            var safetyCell = safetyRow.CreateCell(1);
+            safetyCell.SetCellFormula("SafetyPercent");
+            safetyCell.CellStyle = stylePercent;
             
-            sheet.Cells[rowNum, 1].Value = "Usable Load (A):";
-            sheet.Cells[rowNum, 2].Formula = $"={_report.Parameters.MaxLoad}*(1-SafetyPercent/100)";
-            sheet.Cells[rowNum, 2].Style.Numberformat.Format = "0.000";
-            rowNum++;
+            var usableRow = sheet.CreateRow(rowNum++);
+            usableRow.CreateCell(0).SetCellValue("Usable Load (A):");
+            var usableCell = usableRow.CreateCell(1);
+            usableCell.SetCellFormula($"{_report.Parameters.MaxLoad}*(1-SafetyPercent/100)");
+            usableCell.CellStyle = style3Decimal;
             
-            sheet.Cells[rowNum, 1].Value = "Load Utilization %:";
-            sheet.Cells[rowNum, 2].Formula = $"=SUM('IDNAC Table'!Q:Q)/({_report.Parameters.MaxLoad}*(1-SafetyPercent/100))";
-            sheet.Cells[rowNum, 2].Style.Numberformat.Format = "0.0%";
+            var utilRow = sheet.CreateRow(rowNum++);
+            utilRow.CreateCell(0).SetCellValue("Load Utilization %:");
+            var utilCell = utilRow.CreateCell(1);
+            utilCell.SetCellFormula($"SUM('IDNAC Table'!Q:Q)/({_report.Parameters.MaxLoad}*(1-SafetyPercent/100))");
+            utilCell.CellStyle = stylePercent1;
             
             // Format columns
-            sheet.Column(1).Width = 25;
-            sheet.Column(2).Width = 20;
+            sheet.SetColumnWidth(0, 25 * 256);
+            sheet.SetColumnWidth(1, 20 * 256);
         }
 
-        private void CreateDeviceDetailsSheet(ExcelPackage package)
+        private void CreateDeviceDetailsSheet(IWorkbook workbook)
         {
-            var workbook = package.Workbook;
-            var sheet = workbook.Worksheets.Add("Device Details");
+            var sheet = workbook.CreateSheet("Device Details");
+            
+            // Create cell styles
+            var titleStyle = workbook.CreateCellStyle();
+            var titleFont = workbook.CreateFont();
+            titleFont.FontHeightInPoints = 14;
+            titleFont.IsBold = true;
+            titleStyle.SetFont(titleFont);
+            
+            var headerStyle = workbook.CreateCellStyle();
+            var headerFont = workbook.CreateFont();
+            headerFont.IsBold = true;
+            headerStyle.SetFont(headerFont);
+            headerStyle.FillForegroundColor = HSSFColor.Grey25Percent.Index;
+            headerStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+            
+            var format3Decimal = workbook.CreateDataFormat();
+            var style3Decimal = workbook.CreateCellStyle();
+            style3Decimal.DataFormat = format3Decimal.GetFormat("0.000");
             
             // Title
-            sheet.Cells[1, 1].Value = "DEVICE SPECIFICATIONS";
-            sheet.Cells[1, 1].Style.Font.Size = 14;
-            sheet.Cells[1, 1].Style.Font.Bold = true;
-            sheet.Cells[1, 1, 1, 7].Merge = true;
+            var row0 = sheet.CreateRow(0);
+            var titleCell = row0.CreateCell(0);
+            titleCell.SetCellValue("DEVICE SPECIFICATIONS");
+            titleCell.CellStyle = titleStyle;
+            sheet.AddMergedRegion(new CellRangeAddress(0, 0, 0, 6));
             
             // Headers
+            var headerRow = sheet.CreateRow(2);
             string[] headers = { "Device Name", "Type", "Location", "Alarm Current (A)", 
                                "Standby Current (A)", "Manufacturer", "Model" };
             for (int i = 0; i < headers.Length; i++)
             {
-                sheet.Cells[3, i + 1].Value = headers[i];
-                sheet.Cells[3, i + 1].Style.Font.Bold = true;
-                sheet.Cells[3, i + 1].Style.Fill.PatternType = ExcelFillStyle.Solid;
-                sheet.Cells[3, i + 1].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightGray);
+                var cell = headerRow.CreateCell(i);
+                cell.SetCellValue(headers[i]);
+                cell.CellStyle = headerStyle;
             }
             
             // Add device specifications
-            int rowNum = 4;
+            int rowNum = 3;
             int position = 1;
-            AddDeviceSpecs(sheet, _circuitManager.RootNode, ref rowNum, ref position);
+            AddDeviceSpecs(sheet, _circuitManager.RootNode, ref rowNum, ref position, style3Decimal);
             
             // Auto-fit columns
-            sheet.Cells[sheet.Dimension.Address].AutoFitColumns();
+            for (int i = 0; i < headers.Length; i++)
+            {
+                sheet.AutoSizeColumn(i);
+            }
         }
 
-        private void AddDeviceSpecs(ExcelWorksheet sheet, CircuitNode node, ref int rowNum, ref int position)
+        private void AddDeviceSpecs(ISheet sheet, CircuitNode node, ref int rowNum, ref int position, ICellStyle style3Decimal)
         {
             if (node.NodeType == "Device" && node.DeviceData != null)
             {
-                sheet.Cells[rowNum, 1].Value = node.Name;
+                var row = sheet.CreateRow(rowNum);
+                row.CreateCell(0).SetCellValue(node.Name);
                 
                 // Use Description parameter from family type for device type
                 var deviceTypeValue = GetParameterValue(node, "Description", "Fire Alarm Device");
@@ -1247,105 +1289,117 @@ namespace FireAlarmCircuitAnalysis
                 {
                     deviceTypeValue = deviceTypeValue.Replace("NOTIFICATION", "").Trim();
                 }
-                sheet.Cells[rowNum, 2].Value = deviceTypeValue;
+                row.CreateCell(1).SetCellValue(deviceTypeValue);
                 
-                sheet.Cells[rowNum, 3].Value = node.IsBranchDevice ? "T-Tap Branch" : "Main Circuit";
+                row.CreateCell(2).SetCellValue(node.IsBranchDevice ? "T-Tap Branch" : "Main Circuit");
                 
-                sheet.Cells[rowNum, 4].Value = node.DeviceData.Current.Alarm;
-                sheet.Cells[rowNum, 4].Style.Numberformat.Format = "0.000";
+                var alarmCell = row.CreateCell(3);
+                alarmCell.SetCellValue(node.DeviceData.Current.Alarm);
+                alarmCell.CellStyle = style3Decimal;
                 
-                sheet.Cells[rowNum, 5].Value = node.DeviceData.Current.Standby > 0 ? node.DeviceData.Current.Standby : 0;
-                sheet.Cells[rowNum, 5].Style.Numberformat.Format = "0.000";
+                var standbyCell = row.CreateCell(4);
+                standbyCell.SetCellValue(node.DeviceData.Current.Standby > 0 ? node.DeviceData.Current.Standby : 0);
+                standbyCell.CellStyle = style3Decimal;
                 
                 // Manufacturer from family type Identity Data
-                sheet.Cells[rowNum, 6].Value = GetParameterValue(node, "Manufacturer", "N/A");
+                row.CreateCell(5).SetCellValue(GetParameterValue(node, "Manufacturer", "N/A"));
                 
                 // Model from family type Identity Data
-                sheet.Cells[rowNum, 7].Value = GetParameterValue(node, "Model", "N/A");
+                row.CreateCell(6).SetCellValue(GetParameterValue(node, "Model", "N/A"));
                 
                 rowNum++;
             }
             
             foreach (var child in node.Children)
             {
-                AddDeviceSpecs(sheet, child, ref rowNum, ref position);
+                AddDeviceSpecs(sheet, child, ref rowNum, ref position, style3Decimal);
             }
         }
 
-        private void CreateCalculationsSheet(ExcelPackage package)
+        private void CreateCalculationsSheet(IWorkbook workbook)
         {
-            var workbook = package.Workbook;
-            var sheet = workbook.Worksheets.Add("Calculations");
+            var sheet = workbook.CreateSheet("Calculations");
+            
+            // Create cell styles
+            var titleStyle = workbook.CreateCellStyle();
+            var titleFont = workbook.CreateFont();
+            titleFont.FontHeightInPoints = 14;
+            titleFont.IsBold = true;
+            titleStyle.SetFont(titleFont);
+            
+            var boldStyle = workbook.CreateCellStyle();
+            var boldFont = workbook.CreateFont();
+            boldFont.IsBold = true;
+            boldStyle.SetFont(boldFont);
+            
+            var headerStyle = workbook.CreateCellStyle();
+            headerStyle.FillForegroundColor = HSSFColor.LightBlue.Index;
+            headerStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+            headerStyle.SetFont(boldFont);
             
             // Title
-            sheet.Cells[1, 1].Value = "VOLTAGE DROP CALCULATION REFERENCE";
-            sheet.Cells[1, 1].Style.Font.Size = 14;
-            sheet.Cells[1, 1].Style.Font.Bold = true;
-            sheet.Cells[1, 1, 1, 5].Merge = true;
+            var row0 = sheet.CreateRow(0);
+            var titleCell = row0.CreateCell(0);
+            titleCell.SetCellValue("VOLTAGE DROP CALCULATION REFERENCE");
+            titleCell.CellStyle = titleStyle;
+            sheet.AddMergedRegion(new CellRangeAddress(0, 0, 0, 4));
             
-            int rowNum = 3;
+            int rowNum = 2;
             
             // Formula explanation
-            sheet.Cells[rowNum, 1].Value = "VOLTAGE DROP FORMULA";
-            sheet.Cells[rowNum, 1].Style.Font.Bold = true;
-            sheet.Cells[rowNum, 1].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 1].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightBlue);
-            sheet.Cells[rowNum, 1, rowNum, 2].Merge = true;
-            rowNum++;
+            var formulaRow = sheet.CreateRow(rowNum++);
+            var formulaCell = formulaRow.CreateCell(0);
+            formulaCell.SetCellValue("VOLTAGE DROP FORMULA");
+            formulaCell.CellStyle = headerStyle;
+            sheet.AddMergedRegion(new CellRangeAddress(rowNum-1, rowNum-1, 0, 1));
             
-            sheet.Cells[rowNum, 1].Value = "Vdrop = I × R × L";
-            sheet.Cells[rowNum, 1].Style.Font.Bold = true;
-            rowNum++;
+            var formulaRow2 = sheet.CreateRow(rowNum++);
+            var formulaCell2 = formulaRow2.CreateCell(0);
+            formulaCell2.SetCellValue("Vdrop = I × R × L");
+            formulaCell2.CellStyle = boldStyle;
             
-            sheet.Cells[rowNum, 1].Value = "Where:";
-            rowNum++;
-            sheet.Cells[rowNum, 1].Value = "  I = Current (Amps)";
-            rowNum++;
-            sheet.Cells[rowNum, 1].Value = "  R = 2 × Wire Resistance (Ω/1000ft)";
-            rowNum++;
-            sheet.Cells[rowNum, 1].Value = "  L = Distance (ft) / 1000";
-            rowNum += 2; // Skip row
+            sheet.CreateRow(rowNum++).CreateCell(0).SetCellValue("Where:");
+            sheet.CreateRow(rowNum++).CreateCell(0).SetCellValue("  I = Current (Amps)");
+            sheet.CreateRow(rowNum++).CreateCell(0).SetCellValue("  R = 2 × Wire Resistance (Ω/1000ft)");
+            sheet.CreateRow(rowNum++).CreateCell(0).SetCellValue("  L = Distance (ft) / 1000");
+            rowNum++; // Skip row
             
             // Wire resistance table
-            sheet.Cells[rowNum, 1].Value = "WIRE RESISTANCE TABLE";
-            sheet.Cells[rowNum, 1].Style.Font.Bold = true;
-            sheet.Cells[rowNum, 1].Style.Fill.PatternType = ExcelFillStyle.Solid;
-            sheet.Cells[rowNum, 1].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.LightBlue);
-            sheet.Cells[rowNum, 1, rowNum, 2].Merge = true;
-            rowNum++;
+            var wireRow = sheet.CreateRow(rowNum++);
+            var wireCell = wireRow.CreateCell(0);
+            wireCell.SetCellValue("WIRE RESISTANCE TABLE");
+            wireCell.CellStyle = headerStyle;
+            sheet.AddMergedRegion(new CellRangeAddress(rowNum-1, rowNum-1, 0, 1));
             
-            sheet.Cells[rowNum, 1].Value = "Wire Gauge";
-            sheet.Cells[rowNum, 1].Style.Font.Bold = true;
-            sheet.Cells[rowNum, 2].Value = "Resistance (Ω/1000ft)";
-            sheet.Cells[rowNum, 2].Style.Font.Bold = true;
-            rowNum++;
+            var wireHeaderRow = sheet.CreateRow(rowNum++);
+            var gaugeCell = wireHeaderRow.CreateCell(0);
+            gaugeCell.SetCellValue("Wire Gauge");
+            gaugeCell.CellStyle = boldStyle;
+            var resistCell = wireHeaderRow.CreateCell(1);
+            resistCell.SetCellValue("Resistance (Ω/1000ft)");
+            resistCell.CellStyle = boldStyle;
             
-            sheet.Cells[rowNum, 1].Value = "18 AWG";
-            sheet.Cells[rowNum, 2].Value = 6.385;
-            rowNum++;
+            sheet.CreateRow(rowNum++).CreateCell(0).SetCellValue("18 AWG");
+            sheet.GetRow(rowNum-1).CreateCell(1).SetCellValue(6.385);
             
-            sheet.Cells[rowNum, 1].Value = "16 AWG";
-            sheet.Cells[rowNum, 2].Value = 4.016;
-            rowNum++;
+            sheet.CreateRow(rowNum++).CreateCell(0).SetCellValue("16 AWG");
+            sheet.GetRow(rowNum-1).CreateCell(1).SetCellValue(4.016);
             
-            sheet.Cells[rowNum, 1].Value = "14 AWG";
-            sheet.Cells[rowNum, 2].Value = 2.525;
-            rowNum++;
+            sheet.CreateRow(rowNum++).CreateCell(0).SetCellValue("14 AWG");
+            sheet.GetRow(rowNum-1).CreateCell(1).SetCellValue(2.525);
             
-            sheet.Cells[rowNum, 1].Value = "12 AWG";
-            sheet.Cells[rowNum, 2].Value = 1.588;
-            rowNum++;
+            sheet.CreateRow(rowNum++).CreateCell(0).SetCellValue("12 AWG");
+            sheet.GetRow(rowNum-1).CreateCell(1).SetCellValue(1.588);
             
-            sheet.Cells[rowNum, 1].Value = "10 AWG";
-            sheet.Cells[rowNum, 2].Value = 0.999;
-            rowNum++;
+            sheet.CreateRow(rowNum++).CreateCell(0).SetCellValue("10 AWG");
+            sheet.GetRow(rowNum-1).CreateCell(1).SetCellValue(0.999);
             
-            sheet.Cells[rowNum, 1].Value = "8 AWG";
-            sheet.Cells[rowNum, 2].Value = 0.628;
+            sheet.CreateRow(rowNum++).CreateCell(0).SetCellValue("8 AWG");
+            sheet.GetRow(rowNum-1).CreateCell(1).SetCellValue(0.628);
             
             // Format columns
-            sheet.Column(1).Width = 30;
-            sheet.Column(2).Width = 20;
+            sheet.SetColumnWidth(0, 30 * 256);
+            sheet.SetColumnWidth(1, 20 * 256);
         }
 
         public bool CheckDependencies(string format, out string error)
@@ -1357,18 +1411,16 @@ namespace FireAlarmCircuitAnalysis
                 switch (format.ToUpper())
                 {
                     case "EXCEL":
-                        // Test EPPlus availability
+                        // Test NPOI availability
                         try
                         {
-                            using (var testPackage = CreateExcelPackage())
-                            {
-                                testPackage.Workbook.Worksheets.Add("Test");
-                                // If we get here, EPPlus is working
-                            }
+                            var testWorkbook = new XSSFWorkbook();
+                            testWorkbook.CreateSheet("Test");
+                            // If we get here, NPOI is working
                         }
                         catch (Exception ex)
                         {
-                            error = $"EPPlus not available: {ex.Message}";
+                            error = $"NPOI not available: {ex.Message}";
                             return false;
                         }
                         break;
@@ -1717,7 +1769,7 @@ namespace FireAlarmCircuitAnalysis
                 var sb = new StringBuilder();
                 
                 // Create a comprehensive CSV file that can be opened in Excel
-                // This serves as a fallback when EPPlus is not available
+                // This serves as a fallback when NPOI is not available
                 
                 // Parameters Section
                 sb.AppendLine("FIRE ALARM CIRCUIT ANALYSIS REPORT");

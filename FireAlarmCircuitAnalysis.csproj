@@ -73,7 +73,7 @@
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="NPOI" Version="2.5.6" />
+    <PackageReference Include="EPPlus" Version="8.1.1" />
     <PackageReference Include="PdfSharp" Version="1.50.5147" />
     <PackageReference Include="NLog" Version="5.2.5" />
   </ItemGroup>
@@ -94,6 +94,10 @@
     <EmbeddedResource Remove="Samples\**" />
     <None Remove="Samples\**" />
     <Page Remove="Samples\**" />
+    <Compile Remove="Archive\**" />
+    <EmbeddedResource Remove="Archive\**" />
+    <None Remove="Archive\**" />
+    <Page Remove="Archive\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -121,6 +125,6 @@
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="xcopy &quot;$(TargetPath)&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.json&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)Newtonsoft.Json.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)NPOI*.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)ICSharpCode.SharpZipLib.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)PdfSharp*.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)NLog.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.addin&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\&quot; /Y" />
+    <Exec Command="xcopy &quot;$(TargetPath)&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.json&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)Newtonsoft.Json.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)EPPlus*.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)PdfSharp*.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)NLog.dll&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\FireAlarmCircuitAnalysis\&quot; /Y&#xD;&#xA;xcopy &quot;$(TargetDir)*.addin&quot; &quot;C:\ProgramData\Autodesk\Revit\Addins\2024\&quot; /Y" />
   </Target>
 </Project>

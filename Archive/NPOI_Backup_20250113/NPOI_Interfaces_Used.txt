@@ -1,0 +1,36 @@
+NPOI Interfaces and Classes Used in ExportManager.cs
+====================================================
+
+Namespaces:
+- using NPOI.SS.UserModel;
+- using NPOI.XSSF.UserModel;
+- using NPOI.SS.Util;
+- using NPOI.HSSF.Util;
+
+Main Interfaces:
+- IWorkbook (line 329, 430, 1098, 1227, 1319)
+- ISheet (line 538, 750, 1279)
+- ICellStyle (line 751, 752, 1279)
+- ISheetConditionalFormatting (line 640)
+- IConditionalFormattingRule
+
+Key Classes:
+- XSSFWorkbook
+- XSSFSheetConditionalFormatting
+- HSSFColor (color constants)
+- CellRangeAddress
+- BorderStyle
+- FillPattern
+- HorizontalAlignment
+- ComparisonOperator
+
+Excel Export Methods:
+- CreateParametersSheet(IWorkbook workbook) - line 329
+- CreateFQQIDNACDesignerSheet(IWorkbook workbook) - line 430
+- CreateSummarySheet(IWorkbook workbook) - line 1098
+- CreateDeviceDetailsSheet(IWorkbook workbook) - line 1227
+- CreateCalculationsSheet(IWorkbook workbook) - line 1319
+- ApplyConditionalFormatting(ISheet sheet, int lastRowNum) - line 538
+- AddFQQDevices(...) - line 750
+
+This information will be helpful when converting to EPPlus.

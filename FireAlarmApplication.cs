@@ -3,6 +3,7 @@ using Autodesk.Revit.UI;
 using System;
 using System.Reflection;
 using System.Windows.Media.Imaging;
+using OfficeOpenXml;
 
 namespace FireAlarmCircuitAnalysis
 {
@@ -15,6 +16,9 @@ namespace FireAlarmCircuitAnalysis
         {
             try
             {
+                // Initialize EPPlus license context early
+                InitializeEPPlusLicense();
+                
                 // Create ribbon tab
                 string tabName = "Fire Alarm Tools";
                 try
@@ -103,6 +107,24 @@ namespace FireAlarmCircuitAnalysis
         {
             // Clean up resources if needed
             return Result.Succeeded;
+        }
+        
+        /// <summary>
+        /// Initialize EPPlus license context for non-commercial use
+        /// </summary>
+        private void InitializeEPPlusLicense()
+        {
+            try
+            {
+                // EPPlus 8.1.1 proper license setting method for non-commercial personal use
+                ExcelPackage.License.SetNonCommercialPersonal("Fire Alarm Circuit Analysis Tool");
+                System.Diagnostics.Debug.WriteLine("EPPlus license set to NonCommercial Personal");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Warning: Failed to initialize EPPlus license: {ex.Message}");
+                // This is not critical for application startup, just log the warning
+            }
         }
 
         private BitmapImage LoadImage(string resourcePath)
