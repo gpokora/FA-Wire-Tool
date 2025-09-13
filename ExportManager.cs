@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Autodesk.Revit.UI;
+using Autodesk.Revit.DB;
 using NPOI.SS.UserModel;
 using NPOI.XSSF.UserModel;
 using NPOI.SS.Util;
@@ -338,7 +339,7 @@ namespace FireAlarmCircuitAnalysis
             
             var yellowStyle = workbook.CreateCellStyle();
             yellowStyle.FillForegroundColor = HSSFColor.LightYellow.Index;
-            yellowStyle.FillPattern = FillPattern.SolidForeground;
+            yellowStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
             
             var boldStyle = workbook.CreateCellStyle();
             var boldFont = workbook.CreateFont();
@@ -437,7 +438,7 @@ namespace FireAlarmCircuitAnalysis
             headerFont.FontHeightInPoints = 9;
             headerStyle.SetFont(headerFont);
             headerStyle.FillForegroundColor = HSSFColor.Grey25Percent.Index;
-            headerStyle.FillPattern = FillPattern.SolidForeground;
+            headerStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
             headerStyle.Alignment = HorizontalAlignment.Center;
             headerStyle.BorderBottom = BorderStyle.Thin;
             headerStyle.BorderTop = BorderStyle.Thin;
@@ -453,7 +454,7 @@ namespace FireAlarmCircuitAnalysis
             
             var yellowStyle = workbook.CreateCellStyle();
             yellowStyle.FillForegroundColor = HSSFColor.Yellow.Index;
-            yellowStyle.FillPattern = FillPattern.SolidForeground;
+            yellowStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
             yellowStyle.BorderBottom = BorderStyle.Thin;
             yellowStyle.BorderTop = BorderStyle.Thin;
             yellowStyle.BorderLeft = BorderStyle.Thin;
@@ -462,7 +463,7 @@ namespace FireAlarmCircuitAnalysis
             
             var altRowStyle = workbook.CreateCellStyle();
             altRowStyle.FillForegroundColor = HSSFColor.LightGreen.Index;
-            altRowStyle.FillPattern = FillPattern.SolidForeground;
+            altRowStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
             altRowStyle.BorderBottom = BorderStyle.Thin;
             altRowStyle.BorderTop = BorderStyle.Thin;
             altRowStyle.BorderLeft = BorderStyle.Thin;
@@ -484,7 +485,7 @@ namespace FireAlarmCircuitAnalysis
             string[] fqqHeaders = { 
                 "Element ID", "Address", "Item", "Panel Number", "Circuit Number", "Device Number", "Device Type", "Location", "SKU", "Candela", "Wattage", 
                 "Distance (ft)", "Wire Gauge", "Device mA", "Current (A)", 
-                "Cumulative Distance (ft)", "Cumulative Current (A)", "Voltage Drop (V)", "Voltage Drop %", 
+                "Cumulative Distance (ft)", "Cumulative Current (A)", "Max Allowable Distance (ft)", "Voltage Drop (V)", "Voltage Drop %", 
                 "Total Voltage Drop %", "Voltage at Device (V)", "Status", "Notes"
             };
             
@@ -509,7 +510,7 @@ namespace FireAlarmCircuitAnalysis
             sheet.SetColumnWidth(4, 12 * 256);  // Circuit Number
             sheet.SetColumnWidth(5, 12 * 256);  // Device Number
             sheet.SetColumnWidth(6, 20 * 256);  // Device Type
-            sheet.SetColumnWidth(7, 25 * 256);  // Label
+            sheet.SetColumnWidth(7, 25 * 256);  // Location
             sheet.SetColumnWidth(8, 20 * 256);  // SKU
             sheet.SetColumnWidth(9, 10 * 256);  // Candela
             sheet.SetColumnWidth(10, 10 * 256); // Wattage
@@ -519,15 +520,105 @@ namespace FireAlarmCircuitAnalysis
             sheet.SetColumnWidth(14, 12 * 256); // Current (A)
             sheet.SetColumnWidth(15, 18 * 256); // Cumulative Distance (ft)
             sheet.SetColumnWidth(16, 18 * 256); // Cumulative Current (A)
-            sheet.SetColumnWidth(17, 15 * 256); // Voltage Drop (V)
-            sheet.SetColumnWidth(18, 15 * 256); // Voltage Drop %
-            sheet.SetColumnWidth(19, 18 * 256); // Total Voltage Drop %
-            sheet.SetColumnWidth(20, 18 * 256); // Voltage at Device (V)
-            sheet.SetColumnWidth(21, 12 * 256); // Status
-            sheet.SetColumnWidth(22, 25 * 256); // Notes
+            sheet.SetColumnWidth(17, 18 * 256); // Max Allowable Distance (ft)
+            sheet.SetColumnWidth(18, 15 * 256); // Voltage Drop (V)
+            sheet.SetColumnWidth(19, 15 * 256); // Voltage Drop %
+            sheet.SetColumnWidth(20, 18 * 256); // Total Voltage Drop %
+            sheet.SetColumnWidth(21, 18 * 256); // Voltage at Device (V)
+            sheet.SetColumnWidth(22, 12 * 256); // Status
+            sheet.SetColumnWidth(23, 25 * 256); // Notes
+            
+            // Apply conditional formatting with data bars
+            ApplyConditionalFormatting(sheet, dataRow - 1); // dataRow-1 because dataRow was incremented after last device
             
             // Freeze panes
             sheet.CreateFreezePane(0, 1);
+        }
+        
+        private void ApplyConditionalFormatting(ISheet sheet, int lastRowNum)
+        {
+            try
+            {
+                if (lastRowNum <= 1) return; // Need at least 2 rows (header + 1 data row)
+                
+                var sheetCF = sheet.SheetConditionalFormatting;
+                
+                // Calculate maximum values based on system parameters
+                var usableLoad = _report.Parameters.UsableLoad; // Usable load for current comparison
+                
+                // For distance, we need to calculate max allowable wire length based on load at each device
+                // We'll use a formula-based approach that compares actual vs max allowable wire length
+                
+                // Create a complex conditional formatting rule for distance that uses formulas
+                // This will compare the actual cumulative distance against the max allowable distance for that current
+                ApplyDistanceConditionalFormatting(sheetCF, lastRowNum);
+                
+                // Cumulative Current column (column Q = index 16) - compare against usable load
+                var currentRange = new CellRangeAddress(1, lastRowNum, 16, 16);
+                
+                // Create color scale formatting instead of data bars for broader compatibility
+                var currentRule = sheetCF.CreateConditionalFormattingRule(
+                    ComparisonOperator.GreaterThan, "0");
+                    
+                // Apply simple color formatting
+                var currentFormatting = currentRule.CreatePatternFormatting();
+                currentFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightGreen.Index;
+                currentFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                
+                sheetCF.AddConditionalFormatting(new CellRangeAddress[] { currentRange }, new IConditionalFormattingRule[] { currentRule });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ApplyConditionalFormatting failed: {ex.Message}");
+                // Continue without conditional formatting if it fails
+            }
+        }
+        
+        private void ApplyDistanceConditionalFormatting(ISheetConditionalFormatting sheetCF, int lastRowNum)
+        {
+            try
+            {
+                // Distance formatting - apply color scale instead of data bars
+                // Each device will show how close it is to its maximum allowable wire length
+                
+                var distanceRange = new CellRangeAddress(1, lastRowNum, 15, 15); // Column P (cumulative distance)
+                
+                // Create simple color formatting for distance
+                var distanceRule = sheetCF.CreateConditionalFormattingRule(
+                    ComparisonOperator.GreaterThan, "0");
+                    
+                var distanceFormatting = distanceRule.CreatePatternFormatting();
+                distanceFormatting.FillBackgroundColor = NPOI.HSSF.Util.HSSFColor.LightBlue.Index;
+                distanceFormatting.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
+                
+                sheetCF.AddConditionalFormatting(new CellRangeAddress[] { distanceRange }, new IConditionalFormattingRule[] { distanceRule });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ApplyDistanceConditionalFormatting failed: {ex.Message}");
+            }
+        }
+        
+        private double CalculateConservativeMaxWireLength()
+        {
+            try
+            {
+                // Calculate max possible wire length with minimum current (0.001A) to get upper bound
+                var systemVoltage = _report.Parameters.SystemVoltage;
+                var minVoltage = _report.Parameters.MinVoltage;
+                var wireResistance = _report.Parameters.Resistance;
+                var minCurrent = 0.001; // Minimum current to avoid division by zero
+                
+                // Max Distance = (SystemVoltage - MinVoltage) / (2 * Current * WireResistance / 1000)
+                var maxDistance = (systemVoltage - minVoltage) / (2 * minCurrent * wireResistance / 1000.0);
+                
+                // Cap at reasonable maximum (e.g., 2000 feet) and minimum (e.g., 500 feet)
+                return Math.Min(Math.Max(maxDistance, 500), 2000);
+            }
+            catch
+            {
+                return 1000; // Fallback to 1000 feet
+            }
         }
         
         private void AddFQQDevices(ISheet sheet, IWorkbook workbook, CircuitNode node, ref int rowNum, 
@@ -563,25 +654,50 @@ namespace FireAlarmCircuitAnalysis
                 itemCell.SetCellValue(itemNum);
                 itemCell.CellStyle = rowStyle;
                 
-                // 3. Panel Number - from "CAB#" parameter
+                // 3. Panel Number - from "CAB#" parameter or extracted from address
                 var panelCell = row.CreateCell(3);
-                panelCell.SetCellValue(GetParameterValue(node, "CAB#", "N/A"));
+                var panelNumber = GetParameterValue(node, "CAB#", "");
+                if (string.IsNullOrEmpty(panelNumber) || panelNumber == "N/A")
+                {
+                    var addressValue = GetParameterValue(node, "ICP_CIRCUIT_ADDRESS", "");
+                    panelNumber = ExtractPanelNumberFromAddress(addressValue);
+                }
+                panelCell.SetCellValue(panelNumber);
                 panelCell.CellStyle = rowStyle;
                 
-                // 4. Circuit Number - from "CKT#" parameter
+                // 4. Circuit Number - from "CKT#" parameter or extracted from address
                 var circuitCell = row.CreateCell(4);
-                circuitCell.SetCellValue(GetParameterValue(node, "CKT#", "N/A"));
+                var circuitNumber = GetParameterValue(node, "CKT#", "");
+                if (string.IsNullOrEmpty(circuitNumber) || circuitNumber == "N/A")
+                {
+                    var addressValue = GetParameterValue(node, "ICP_CIRCUIT_ADDRESS", "");
+                    circuitNumber = ExtractCircuitNumberFromAddress(addressValue);
+                }
+                circuitCell.SetCellValue(circuitNumber);
                 circuitCell.CellStyle = rowStyle;
                 
-                // 5. Device Number - from "MODD ADD" parameter
+                // 5. Device Number - from "MODD ADD" parameter or extracted from address
                 var deviceNumCell = row.CreateCell(5);
-                deviceNumCell.SetCellValue(GetParameterValue(node, "MODD ADD", node.SequenceNumber.ToString()));
+                var deviceNumber = GetParameterValue(node, "MODD ADD", "");
+                if (string.IsNullOrEmpty(deviceNumber) || deviceNumber == "N/A")
+                {
+                    var addressValue = GetParameterValue(node, "ICP_CIRCUIT_ADDRESS", "");
+                    deviceNumber = ExtractDeviceNumberFromAddress(addressValue);
+                    if (string.IsNullOrEmpty(deviceNumber))
+                    {
+                        deviceNumber = node.SequenceNumber.ToString();
+                    }
+                }
+                deviceNumCell.SetCellValue(deviceNumber);
                 deviceNumCell.CellStyle = rowStyle;
                 
-                // 6. Device Type - from family type name with NOTIFICATION stripped
+                // 6. Device Type - from Description parameter in family type Identity Data
                 var deviceTypeCell = row.CreateCell(6);
-                var deviceTypeName = node.DeviceData?.DeviceType ?? node.Name ?? "Fire Alarm Device";
-                deviceTypeName = deviceTypeName.Replace("NOTIFICATION", "").Trim();
+                var deviceTypeName = GetParameterValue(node, "Description", "N/A");
+                if (deviceTypeName != "N/A")
+                {
+                    deviceTypeName = deviceTypeName.Replace("NOTIFICATION", "").Trim();
+                }
                 deviceTypeCell.SetCellValue(deviceTypeName);
                 deviceTypeCell.CellStyle = rowStyle;
                 
@@ -590,16 +706,9 @@ namespace FireAlarmCircuitAnalysis
                 locationCell.SetCellValue(GetParameterValue(node, "AREA_DESCRIPTION", "N/A"));
                 locationCell.CellStyle = rowStyle;
                 
-                // 8. SKU - from family instance model parameter
+                // 8. SKU - from Model parameter in family type Identity Data
                 var skuCell = row.CreateCell(8);
-                var skuValue = GetParameterValue(node, "Model", "");
-                if (string.IsNullOrEmpty(skuValue))
-                {
-                    // Try alternative parameter names if Model is not found
-                    skuValue = GetParameterValue(node, "Type Model", "");
-                    if (string.IsNullOrEmpty(skuValue))
-                        skuValue = GetParameterValue(node, "Part Number", "N/A");
-                }
+                var skuValue = GetParameterValue(node, "Model", "N/A");
                 skuCell.SetCellValue(skuValue);
                 skuCell.CellStyle = rowStyle;
                 
@@ -651,40 +760,45 @@ namespace FireAlarmCircuitAnalysis
                 cumCurrentCell.SetCellFormula($"SUM($O$2:O{rowNum+1})");
                 cumCurrentCell.CellStyle = style2Decimal;
                 
-                // 17. Voltage Drop (V) - formula: =Q{rowNum+1}*2*L{rowNum+1}*WireResistance/1000
-                var voltDropCell = row.CreateCell(17);
+                // 17. Max Allowable Distance (ft) - formula: =(SystemVoltage-MinVoltage)/(2*Q{rowNum+1}*WireResistance/1000)
+                var maxAllowableDistanceCell = row.CreateCell(17);
+                maxAllowableDistanceCell.SetCellFormula($"(SystemVoltage-MinVoltage)/(2*Q{rowNum+1}*WireResistance/1000)");
+                maxAllowableDistanceCell.CellStyle = style2Decimal;
+                
+                // 18. Voltage Drop (V) - formula: =Q{rowNum+1}*2*L{rowNum+1}*WireResistance/1000
+                var voltDropCell = row.CreateCell(18);
                 voltDropCell.SetCellFormula($"Q{rowNum+1}*2*L{rowNum+1}*WireResistance/1000");
                 voltDropCell.CellStyle = style2Decimal;
                 
-                // 18. Voltage Drop % - formula: =R{rowNum+1}/SystemVoltage*100
-                var voltDropPercentCell = row.CreateCell(18);
-                voltDropPercentCell.SetCellFormula($"R{rowNum+1}/SystemVoltage*100");
+                // 19. Voltage Drop % - formula: =S{rowNum+1}/SystemVoltage*100
+                var voltDropPercentCell = row.CreateCell(19);
+                voltDropPercentCell.SetCellFormula($"S{rowNum+1}/SystemVoltage*100");
                 voltDropPercentCell.CellStyle = style2Decimal;
                 
-                // 19. Total Voltage Drop % - formula: =(SystemVoltage-U{rowNum+1})/SystemVoltage*100
-                var totalDropCell = row.CreateCell(19);
-                totalDropCell.SetCellFormula($"(SystemVoltage-U{rowNum+1})/SystemVoltage*100");
+                // 20. Total Voltage Drop % - formula: =(SystemVoltage-V{rowNum+1})/SystemVoltage*100
+                var totalDropCell = row.CreateCell(20);
+                totalDropCell.SetCellFormula($"(SystemVoltage-V{rowNum+1})/SystemVoltage*100");
                 totalDropCell.CellStyle = style2Decimal;
                 
-                // 20. Voltage at Device (V) - formula: =SystemVoltage-SUM($R$2:R{rowNum+1})
-                var voltsCell = row.CreateCell(20);
+                // 21. Voltage at Device (V) - formula: =SystemVoltage-SUM($S$2:S{rowNum+1})
+                var voltsCell = row.CreateCell(21);
                 if (rowNum == 1) // First device
                 {
-                    voltsCell.SetCellFormula($"SystemVoltage-R{rowNum+1}");
+                    voltsCell.SetCellFormula($"SystemVoltage-S{rowNum+1}");
                 }
                 else
                 {
-                    voltsCell.SetCellFormula($"U{rowNum}-R{rowNum+1}");
+                    voltsCell.SetCellFormula($"V{rowNum}-S{rowNum+1}");
                 }
                 voltsCell.CellStyle = style2Decimal;
                 
-                // 21. Status - formula: =IF(U{rowNum+1}>=MinVoltage,"OK","LOW VOLTAGE")
-                var statusCell = row.CreateCell(21);
-                statusCell.SetCellFormula($"IF(U{rowNum+1}>=MinVoltage,\"OK\",\"LOW VOLTAGE\")");
+                // 22. Status - formula: =IF(V{rowNum+1}>=MinVoltage,"OK","LOW VOLTAGE")
+                var statusCell = row.CreateCell(22);
+                statusCell.SetCellFormula($"IF(V{rowNum+1}>=MinVoltage,\"OK\",\"LOW VOLTAGE\")");
                 statusCell.CellStyle = rowStyle;
                 
-                // 22. Notes - editable field for user notes
-                var notesCell = row.CreateCell(22);
+                // 23. Notes - editable field for user notes
+                var notesCell = row.CreateCell(23);
                 notesCell.SetCellValue("N/A");
                 notesCell.CellStyle = yellowStyle; // Make it editable
                 
@@ -759,12 +873,32 @@ namespace FireAlarmCircuitAnalysis
             {
                 if (node?.DeviceData?.Element == null) return defaultValue;
                 
-                // Try to get parameter from the Revit element
-                var param = node.DeviceData.Element.LookupParameter(parameterName);
+                var element = node.DeviceData.Element;
+                
+                // First try to get parameter from the element instance
+                var param = element.LookupParameter(parameterName);
                 if (param != null && param.HasValue)
                 {
                     var value = param.AsString() ?? param.AsValueString();
-                    return string.IsNullOrEmpty(value) ? defaultValue : value;
+                    if (!string.IsNullOrEmpty(value))
+                        return value;
+                }
+                
+                // If not found on instance, try the family type (for parameters like Description, Model, Manufacturer)
+                var typeId = element.GetTypeId();
+                if (typeId != ElementId.InvalidElementId)
+                {
+                    var elemType = element.Document.GetElement(typeId);
+                    if (elemType != null)
+                    {
+                        var typeParam = elemType.LookupParameter(parameterName);
+                        if (typeParam != null && typeParam.HasValue)
+                        {
+                            var value = typeParam.AsString() ?? typeParam.AsValueString();
+                            if (!string.IsNullOrEmpty(value))
+                                return value;
+                        }
+                    }
                 }
                 
                 return defaultValue;
@@ -849,7 +983,7 @@ namespace FireAlarmCircuitAnalysis
             
             var headerStyle = workbook.CreateCellStyle();
             headerStyle.FillForegroundColor = HSSFColor.LightBlue.Index;
-            headerStyle.FillPattern = FillPattern.SolidForeground;
+            headerStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
             headerStyle.SetFont(boldFont);
             
             // Number formats
@@ -897,7 +1031,7 @@ namespace FireAlarmCircuitAnalysis
             var loadRow = sheet.CreateRow(rowNum++);
             loadRow.CreateCell(0).SetCellValue("Total Alarm Load (A):");
             var loadCell = loadRow.CreateCell(1);
-            loadCell.SetCellFormula("SUM('IDNAC Table'!O:O)");
+            loadCell.SetCellFormula("SUM('IDNAC Table'!Q:Q)");
             loadCell.CellStyle = style3Decimal;
             
             var distanceRow = sheet.CreateRow(rowNum++);
@@ -909,19 +1043,19 @@ namespace FireAlarmCircuitAnalysis
             var dropRow = sheet.CreateRow(rowNum++);
             dropRow.CreateCell(0).SetCellValue("Maximum Voltage Drop (V):");
             var dropCell = dropRow.CreateCell(1);
-            dropCell.SetCellFormula("SystemVoltage-MIN('IDNAC Table'!U:U)");
+            dropCell.SetCellFormula("SystemVoltage-MIN('IDNAC Table'!V:V)");
             dropCell.CellStyle = style2Decimal;
             
             var eolRow = sheet.CreateRow(rowNum++);
             eolRow.CreateCell(0).SetCellValue("End-of-Line Voltage (V):");
             var eolCell = eolRow.CreateCell(1);
-            eolCell.SetCellFormula("MIN('IDNAC Table'!U:U)");
+            eolCell.SetCellFormula("MIN('IDNAC Table'!V:V)");
             eolCell.CellStyle = style2Decimal;
             
             var statusRow = sheet.CreateRow(rowNum++);
             statusRow.CreateCell(0).SetCellValue("Circuit Status:");
             var statusCell = statusRow.CreateCell(1);
-            statusCell.SetCellFormula("IF(MIN('IDNAC Table'!U:U)>=MinVoltage,\"PASS\",\"FAIL\")");
+            statusCell.SetCellFormula("IF(MIN('IDNAC Table'!V:V)>=MinVoltage,\"PASS\",\"FAIL\")");
             statusCell.CellStyle = boldStyle;
             
             rowNum++; // Skip row
@@ -952,7 +1086,7 @@ namespace FireAlarmCircuitAnalysis
             var utilRow = sheet.CreateRow(rowNum++);
             utilRow.CreateCell(0).SetCellValue("Load Utilization %:");
             var utilCell = utilRow.CreateCell(1);
-            utilCell.SetCellFormula($"SUM('IDNAC Table'!O:O)/({_report.Parameters.MaxLoad}*(1-SafetyPercent/100))");
+            utilCell.SetCellFormula($"SUM('IDNAC Table'!Q:Q)/({_report.Parameters.MaxLoad}*(1-SafetyPercent/100))");
             utilCell.CellStyle = stylePercent1;
             
             // Format columns
@@ -976,7 +1110,7 @@ namespace FireAlarmCircuitAnalysis
             headerFont.IsBold = true;
             headerStyle.SetFont(headerFont);
             headerStyle.FillForegroundColor = HSSFColor.Grey25Percent.Index;
-            headerStyle.FillPattern = FillPattern.SolidForeground;
+            headerStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
             
             var format3Decimal = workbook.CreateDataFormat();
             var style3Decimal = workbook.CreateCellStyle();
@@ -1018,7 +1152,15 @@ namespace FireAlarmCircuitAnalysis
             {
                 var row = sheet.CreateRow(rowNum);
                 row.CreateCell(0).SetCellValue(node.Name);
-                row.CreateCell(1).SetCellValue(node.DeviceData.DeviceType ?? "Fire Alarm Device");
+                
+                // Use Description parameter from family type for device type
+                var deviceTypeValue = GetParameterValue(node, "Description", "Fire Alarm Device");
+                if (deviceTypeValue != "Fire Alarm Device")
+                {
+                    deviceTypeValue = deviceTypeValue.Replace("NOTIFICATION", "").Trim();
+                }
+                row.CreateCell(1).SetCellValue(deviceTypeValue);
+                
                 row.CreateCell(2).SetCellValue(node.IsBranchDevice ? "T-Tap Branch" : "Main Circuit");
                 
                 var alarmCell = row.CreateCell(3);
@@ -1029,8 +1171,11 @@ namespace FireAlarmCircuitAnalysis
                 standbyCell.SetCellValue(node.DeviceData.Current.Standby > 0 ? node.DeviceData.Current.Standby : 0);
                 standbyCell.CellStyle = style3Decimal;
                 
-                row.CreateCell(5).SetCellValue(""); // Placeholder for manufacturer
-                row.CreateCell(6).SetCellValue(""); // Placeholder for model
+                // Manufacturer from family type Identity Data
+                row.CreateCell(5).SetCellValue(GetParameterValue(node, "Manufacturer", "N/A"));
+                
+                // Model from family type Identity Data
+                row.CreateCell(6).SetCellValue(GetParameterValue(node, "Model", "N/A"));
                 
                 rowNum++;
             }
@@ -1059,7 +1204,7 @@ namespace FireAlarmCircuitAnalysis
             
             var headerStyle = workbook.CreateCellStyle();
             headerStyle.FillForegroundColor = HSSFColor.LightBlue.Index;
-            headerStyle.FillPattern = FillPattern.SolidForeground;
+            headerStyle.FillPattern = NPOI.SS.UserModel.FillPattern.SolidForeground;
             headerStyle.SetFont(boldFont);
             
             // Title
@@ -1544,6 +1689,78 @@ namespace FireAlarmCircuitAnalysis
             catch
             {
                 return false;
+            }
+        }
+        
+        /// <summary>
+        /// Extract panel number from address format (e.g., "C3:N7-2" -> "3")
+        /// </summary>
+        private string ExtractPanelNumberFromAddress(string address)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(address)) return "N/A";
+                
+                // Pattern: C{panel}:N{circuit}-{device}
+                var match = System.Text.RegularExpressions.Regex.Match(address, @"C(\d+):");
+                if (match.Success)
+                {
+                    return match.Groups[1].Value;
+                }
+                
+                return "N/A";
+            }
+            catch
+            {
+                return "N/A";
+            }
+        }
+        
+        /// <summary>
+        /// Extract circuit number from address format (e.g., "C3:N7-2" -> "7")
+        /// </summary>
+        private string ExtractCircuitNumberFromAddress(string address)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(address)) return "N/A";
+                
+                // Pattern: C{panel}:N{circuit}-{device}
+                var match = System.Text.RegularExpressions.Regex.Match(address, @":N(\d+)");
+                if (match.Success)
+                {
+                    return match.Groups[1].Value;
+                }
+                
+                return "N/A";
+            }
+            catch
+            {
+                return "N/A";
+            }
+        }
+        
+        /// <summary>
+        /// Extract device number from address format (e.g., "C3:N7-2" -> "2")
+        /// </summary>
+        private string ExtractDeviceNumberFromAddress(string address)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(address)) return "N/A";
+                
+                // Pattern: C{panel}:N{circuit}-{device}
+                var match = System.Text.RegularExpressions.Regex.Match(address, @"-(\d+)$");
+                if (match.Success)
+                {
+                    return match.Groups[1].Value;
+                }
+                
+                return "N/A";
+            }
+            catch
+            {
+                return "N/A";
             }
         }
     }

@@ -35,6 +35,10 @@ namespace FireAlarmCircuitAnalysis
         // Circuit statistics
         public CircuitStatistics Statistics { get; private set; }
 
+        // Circuit information
+        public string CircuitID { get; set; } = "FA-1";
+        public string CircuitDescription { get; set; } = "";
+
         public CircuitManager(CircuitParameters parameters)
         {
             Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));

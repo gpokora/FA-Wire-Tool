@@ -138,6 +138,9 @@ namespace FireAlarmCircuitAnalysis
                             {
                                 successCount++;
                                 circuitManager.CreatedWires.Add(wire.Id);
+                                
+                                // Tag wire with circuit ID and length
+                                TagWireWithCircuitInfo(wire, circuitManager.CircuitID, points);
                             }
                         }
                     }
@@ -183,6 +186,9 @@ namespace FireAlarmCircuitAnalysis
                             {
                                 successCount++;
                                 circuitManager.CreatedWires.Add(wire.Id);
+                                
+                                // Tag wire with circuit ID and length
+                                TagWireWithCircuitInfo(wire, circuitManager.CircuitID, points);
                             }
                         }
                     }
@@ -221,6 +227,9 @@ namespace FireAlarmCircuitAnalysis
                                 {
                                     successCount++;
                                     circuitManager.CreatedWires.Add(wire.Id);
+                                    
+                                    // Tag wire with circuit ID and length
+                                    TagWireWithCircuitInfo(wire, circuitManager.CircuitID, points);
                                 }
                             }
                         }
@@ -312,6 +321,75 @@ namespace FireAlarmCircuitAnalysis
                 System.Diagnostics.Debug.WriteLine($"CalculateWireLength failed: {ex.Message}");
             }
             return total;
+        }
+
+        /// <summary>
+        /// Tag wire with circuit ID and length parameters
+        /// </summary>
+        private void TagWireWithCircuitInfo(Wire wire, string circuitID, List<XYZ> points)
+        {
+            try
+            {
+                if (wire == null) return;
+
+                // Calculate wire length
+                double lengthFeet = CalculateWireLength(points);
+
+                // Set circuit ID parameter
+                var circuitParam = wire.LookupParameter("Circuit ID");
+                if (circuitParam == null)
+                {
+                    // Try common parameter names for circuit ID
+                    circuitParam = wire.LookupParameter("CIRCUIT_ID") ??
+                                  wire.LookupParameter("Circuit_ID") ??
+                                  wire.LookupParameter("Circuit Number") ??
+                                  wire.LookupParameter("CIRCUIT_NUMBER") ??
+                                  wire.LookupParameter("Circuit_Number");
+                }
+                
+                if (circuitParam != null && !circuitParam.IsReadOnly)
+                {
+                    circuitParam.Set(circuitID ?? "N/A");
+                    System.Diagnostics.Debug.WriteLine($"Set circuit ID '{circuitID}' on wire {wire.Id}");
+                }
+
+                // Set wire length parameter
+                var lengthParam = wire.LookupParameter("Length") ??
+                                 wire.LookupParameter("Wire Length") ??
+                                 wire.LookupParameter("WIRE_LENGTH") ??
+                                 wire.LookupParameter("Wire_Length");
+                
+                if (lengthParam != null && !lengthParam.IsReadOnly)
+                {
+                    lengthParam.Set(lengthFeet);
+                    System.Diagnostics.Debug.WriteLine($"Set wire length {lengthFeet:F2} ft on wire {wire.Id}");
+                }
+
+                // Set comments with circuit and length info
+                var commentsParam = wire.LookupParameter("Comments");
+                if (commentsParam != null && !commentsParam.IsReadOnly)
+                {
+                    string comments = $"Circuit: {circuitID ?? "N/A"}, Length: {lengthFeet:F1} ft";
+                    commentsParam.Set(comments);
+                    System.Diagnostics.Debug.WriteLine($"Set comments '{comments}' on wire {wire.Id}");
+                }
+
+                // Try to set wire number based on circuit ID
+                var wireNumberParam = wire.LookupParameter("Wire Number") ??
+                                     wire.LookupParameter("WIRE_NUMBER") ??
+                                     wire.LookupParameter("Wire_Number");
+                                     
+                if (wireNumberParam != null && !wireNumberParam.IsReadOnly)
+                {
+                    wireNumberParam.Set(circuitID ?? "N/A");
+                    System.Diagnostics.Debug.WriteLine($"Set wire number '{circuitID}' on wire {wire.Id}");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"TagWireWithCircuitInfo failed for wire {wire?.Id}: {ex.Message}");
+                // Continue without failing the wire creation
+            }
         }
 
         public string GetName()
@@ -563,6 +641,9 @@ namespace FireAlarmCircuitAnalysis
                                 successCount++;
                                 segmentCreated = true;
                                 Window.circuitManager.CreatedWires.Add(wire.Id);
+                                
+                                // Tag wire with circuit ID and length
+                                TagWireWithCircuitInfo(wire, Window.circuitManager.CircuitID, points);
                             }
                         }
                     }
@@ -612,6 +693,9 @@ namespace FireAlarmCircuitAnalysis
                 if (wire != null)
                 {
                     Window.circuitManager.CreatedWires.Add(wire.Id);
+                    
+                    // Tag wire with circuit ID and length
+                    TagWireWithCircuitInfo(wire, Window.circuitManager.CircuitID, points);
                     return true;
                 }
                 return false;
@@ -656,6 +740,98 @@ namespace FireAlarmCircuitAnalysis
 
             points.Add(endPt);
             return points;
+        }
+
+        /// <summary>
+        /// Tag wire with circuit ID and length parameters
+        /// </summary>
+        private void TagWireWithCircuitInfo(Wire wire, string circuitID, List<XYZ> points)
+        {
+            try
+            {
+                if (wire == null) return;
+
+                // Calculate wire length
+                double lengthFeet = CalculateWireLength(points);
+
+                // Set circuit ID parameter
+                var circuitParam = wire.LookupParameter("Circuit ID");
+                if (circuitParam == null)
+                {
+                    // Try common parameter names for circuit ID
+                    circuitParam = wire.LookupParameter("CIRCUIT_ID") ??
+                                  wire.LookupParameter("Circuit_ID") ??
+                                  wire.LookupParameter("Circuit Number") ??
+                                  wire.LookupParameter("CIRCUIT_NUMBER") ??
+                                  wire.LookupParameter("Circuit_Number");
+                }
+                
+                if (circuitParam != null && !circuitParam.IsReadOnly)
+                {
+                    circuitParam.Set(circuitID ?? "N/A");
+                    System.Diagnostics.Debug.WriteLine($"Set circuit ID '{circuitID}' on wire {wire.Id}");
+                }
+
+                // Set wire length parameter
+                var lengthParam = wire.LookupParameter("Length") ??
+                                 wire.LookupParameter("Wire Length") ??
+                                 wire.LookupParameter("WIRE_LENGTH") ??
+                                 wire.LookupParameter("Wire_Length");
+                
+                if (lengthParam != null && !lengthParam.IsReadOnly)
+                {
+                    lengthParam.Set(lengthFeet);
+                    System.Diagnostics.Debug.WriteLine($"Set wire length {lengthFeet:F2} ft on wire {wire.Id}");
+                }
+
+                // Set comments with circuit and length info
+                var commentsParam = wire.LookupParameter("Comments");
+                if (commentsParam != null && !commentsParam.IsReadOnly)
+                {
+                    string comments = $"Circuit: {circuitID ?? "N/A"}, Length: {lengthFeet:F1} ft";
+                    commentsParam.Set(comments);
+                    System.Diagnostics.Debug.WriteLine($"Set comments '{comments}' on wire {wire.Id}");
+                }
+
+                // Try to set wire number based on circuit ID
+                var wireNumberParam = wire.LookupParameter("Wire Number") ??
+                                     wire.LookupParameter("WIRE_NUMBER") ??
+                                     wire.LookupParameter("Wire_Number");
+                                     
+                if (wireNumberParam != null && !wireNumberParam.IsReadOnly)
+                {
+                    wireNumberParam.Set(circuitID ?? "N/A");
+                    System.Diagnostics.Debug.WriteLine($"Set wire number '{circuitID}' on wire {wire.Id}");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"TagWireWithCircuitInfo failed for wire {wire?.Id}: {ex.Message}");
+                // Continue without failing the wire creation
+            }
+        }
+
+        /// <summary>
+        /// Calculate wire length through routing points
+        /// </summary>
+        private double CalculateWireLength(List<XYZ> points)
+        {
+            double total = 0.0;
+            try
+            {
+                for (int i = 0; i < points.Count - 1; i++)
+                {
+                    total += points[i].DistanceTo(points[i + 1]);
+                }
+
+                // Apply routing overhead (15% default)
+                total *= 1.15;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"CalculateWireLength failed: {ex.Message}");
+            }
+            return total;
         }
 
         public string GetName()

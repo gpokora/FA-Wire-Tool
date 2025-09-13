@@ -343,6 +343,9 @@ namespace FireAlarmCircuitAnalysis.Views
                     var parameters = GetParameters();
                     circuitManager = new CircuitManager(parameters);
                     
+                    // Update circuit info display
+                    UpdateCircuitInfoDisplay();
+                    
                     // Initialize SchematicDrawing with the new circuit manager
                     schematicDrawing = new SchematicDrawing(circuitSchematicCanvas, circuitManager);
                     schematicDrawing.DeviceSelected += OnSchematicDeviceSelected;
@@ -759,6 +762,42 @@ namespace FireAlarmCircuitAnalysis.Views
             UpdateAnalysisTab();
         }
 
+        private bool? ShowCircuitInfoDialog(string currentID, string currentDescription)
+        {
+            try
+            {
+                // Use proper input dialog window
+                var dialog = new CircuitInfoDialogWindow(currentID, currentDescription);
+                dialog.Owner = this;
+                
+                var result = dialog.ShowDialog();
+                if (result == true)
+                {
+                    // Update circuit manager with new values
+                    circuitManager.CircuitID = dialog.CircuitID;
+                    circuitManager.CircuitDescription = dialog.Description;
+                    return true;
+                }
+                
+                return false;
+            }
+            catch (Exception ex)
+            {
+                TaskDialog.Show("Error", $"Failed to show circuit info dialog: {ex.Message}");
+                return false;
+            }
+        }
+
+        private void UpdateCircuitInfoDisplay()
+        {
+            if (circuitManager != null)
+            {
+                lblCircuitID.Text = circuitManager.CircuitID;
+                lblCircuitDescription.Text = string.IsNullOrEmpty(circuitManager.CircuitDescription) 
+                    ? "No description" : circuitManager.CircuitDescription;
+            }
+        }
+
         private void UpdateAnalysisTab()
         {
             if (circuitManager == null)
@@ -983,6 +1022,9 @@ namespace FireAlarmCircuitAnalysis.Views
             btnCreateWires.IsEnabled = false;
             btnClearCircuit.IsEnabled = false;
             
+            // Enable device removal in edit mode
+            btnRemoveDevice.IsEnabled = true;
+            
             // Raise event to apply visual overrides
             editCircuitHandler.IsEnteringEditMode = true;
             editCircuitEvent.Raise();
@@ -1000,6 +1042,9 @@ namespace FireAlarmCircuitAnalysis.Views
             btnStartSelection.IsEnabled = true;
             btnCreateWires.IsEnabled = circuitManager.MainCircuit.Count > 1 || circuitManager.Branches.Count > 0;
             btnClearCircuit.IsEnabled = true;
+            
+            // Disable device removal when not in edit mode
+            btnRemoveDevice.IsEnabled = false;
             
             // Raise event to remove visual overrides
             editCircuitHandler.IsEnteringEditMode = false;
@@ -1046,9 +1091,14 @@ namespace FireAlarmCircuitAnalysis.Views
                     circuitManager = null;
                     tvCircuit.Items.Clear();
                     dgDevices.ItemsSource = null;
+                    
+                    // Clear the schematic drawing
+                    schematicDrawing?.DrawSchematic();
+                    
                     UpdateStatusDisplay();
                     UpdateSummaryPanel();
                     UpdateAnalysisTab();  // Ensure Analysis tab is also reset
+                    UpdateCircuitInfoDisplay(); // Clear circuit info display
                     lblStatusMessage.Text = "Circuit cleared";
                     lblMode.Text = "IDLE";
                     btnCreateWires.IsEnabled = false;
@@ -1102,6 +1152,9 @@ namespace FireAlarmCircuitAnalysis.Views
                                 {
                                     var parameters = GetParameters();
                                     circuitManager = new CircuitManager(parameters);
+                                    
+                                    // Update circuit info display
+                                    UpdateCircuitInfoDisplay();
                                 }
 
                                 // Initialize SchematicDrawing with the circuit manager
@@ -1109,6 +1162,7 @@ namespace FireAlarmCircuitAnalysis.Views
                                 schematicDrawing.DeviceSelected += OnSchematicDeviceSelected;
 
                                 circuitManager.LoadConfiguration(configToLoad);
+                                UpdateCircuitInfoDisplay();
                                 UpdateDisplay();
                                 lblStatusMessage.Text = $"Loaded circuit '{configToLoad.Name}'.";
                                 btnSaveCircuit.IsEnabled = true;
@@ -1124,6 +1178,9 @@ namespace FireAlarmCircuitAnalysis.Views
                         {
                             var parameters = GetParameters();
                             circuitManager = new CircuitManager(parameters);
+                            
+                            // Update circuit info display
+                            UpdateCircuitInfoDisplay();
                         }
 
                         // Initialize SchematicDrawing with the circuit manager
@@ -1131,6 +1188,7 @@ namespace FireAlarmCircuitAnalysis.Views
                         schematicDrawing.DeviceSelected += OnSchematicDeviceSelected;
 
                         circuitManager.LoadConfiguration(loadDialog.SelectedConfiguration);
+                        UpdateCircuitInfoDisplay();
                         UpdateDisplay();
                         lblStatusMessage.Text = $"Loaded circuit '{loadDialog.SelectedConfiguration.Name}'.";
                         btnSaveCircuit.IsEnabled = true;
@@ -1181,6 +1239,20 @@ namespace FireAlarmCircuitAnalysis.Views
             catch (Exception ex)
             {
                 TaskDialog.Show("Settings Error", $"Failed to open settings: {ex.Message}");
+            }
+        }
+
+        private void BtnCircuitInfo_Click(object sender, RoutedEventArgs e)
+        {
+            if (circuitManager == null) return;
+            
+            // Simple input dialog for circuit information
+            var result = ShowCircuitInfoDialog(circuitManager.CircuitID, circuitManager.CircuitDescription);
+            if (result.HasValue && result.Value)
+            {
+                // Update circuit info and UI
+                UpdateCircuitInfoDisplay();
+                lblStatusMessage.Text = $"Circuit info updated: {circuitManager.CircuitID}";
             }
         }
 

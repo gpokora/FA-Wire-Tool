@@ -308,8 +308,9 @@ namespace FireAlarmCircuitAnalysis.Views
                 };
                 _deviceMap[child] = device;
                 
-                // Position any branches from this device
-                if (child.Children.Any(c => c.IsBranchDevice))
+                // Position any T-tap branches from this device
+                var branchChildren = child.Children.Where(c => c.IsBranchDevice).ToList();
+                if (branchChildren.Any())
                 {
                     PositionBranchDevices(child, device.X, mainY + _branchVerticalSpacing * _scale);
                 }
@@ -349,7 +350,7 @@ namespace FireAlarmCircuitAnalysis.Views
                 };
                 _deviceMap[branch] = device;
                 
-                // Position subsequent devices in branch with full spacing
+                // Position subsequent devices in this branch chain following parent-child structure
                 double nextX = branchX + (_minDeviceSpacing * _scale);
                 PositionBranchChain(branch, ref nextX, branchY);
                 
@@ -360,7 +361,8 @@ namespace FireAlarmCircuitAnalysis.Views
         private int CountBranchDevices(CircuitNode node)
         {
             int count = 0;
-            foreach (var child in node.Children)
+            // Only count branch devices in the chain
+            foreach (var child in node.Children.Where(c => c.IsBranchDevice))
             {
                 count++;
                 count += CountBranchDevices(child);
@@ -370,7 +372,8 @@ namespace FireAlarmCircuitAnalysis.Views
 
         private void PositionBranchChain(CircuitNode node, ref double currentX, double y)
         {
-            foreach (var child in node.Children)
+            // Only continue with devices in the branch chain (IsBranchDevice = true)
+            foreach (var child in node.Children.Where(c => c.IsBranchDevice))
             {
                 var device = new SchematicDevice
                 {
@@ -382,6 +385,8 @@ namespace FireAlarmCircuitAnalysis.Views
                 _deviceMap[child] = device;
                 
                 currentX += _minDeviceSpacing * _scale;
+                
+                // Recursively position the rest of the branch chain
                 PositionBranchChain(child, ref currentX, y);
             }
         }

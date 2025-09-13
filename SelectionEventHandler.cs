@@ -79,7 +79,7 @@ namespace FireAlarmCircuitAnalysis
                 IsSelecting = false;
                 
                 // Clear visual overrides before ending selection
-                if (Window?.circuitManager?.OriginalOverrides?.Count > 0)
+                if (Window?.circuitManager?.OriginalOverrides?.Count > 0 || Window?.circuitManager?.OriginalWireOverrides?.Count > 0)
                 {
                     try
                     {
@@ -90,6 +90,7 @@ namespace FireAlarmCircuitAnalysis
                         {
                             trans.Start();
                             
+                            // Clear device overrides
                             foreach (var kvp in Window.circuitManager.OriginalOverrides)
                             {
                                 try
@@ -104,8 +105,25 @@ namespace FireAlarmCircuitAnalysis
                                     // Skip individual failures
                                 }
                             }
-                            
                             Window.circuitManager.OriginalOverrides.Clear();
+                            
+                            // Clear wire overrides
+                            foreach (var kvp in Window.circuitManager.OriginalWireOverrides)
+                            {
+                                try
+                                {
+                                    if (kvp.Key != ElementId.InvalidElementId)
+                                    {
+                                        activeView.SetElementOverrides(kvp.Key, kvp.Value ?? new OverrideGraphicSettings());
+                                    }
+                                }
+                                catch
+                                {
+                                    // Skip individual failures
+                                }
+                            }
+                            Window.circuitManager.OriginalWireOverrides.Clear();
+                            
                             trans.Commit();
                         }
                     }
@@ -221,21 +239,26 @@ namespace FireAlarmCircuitAnalysis
                             circuitManager.OriginalOverrides[elementId] = original;
                         }
 
-                        // Apply visual override based on mode
+                        // Apply visual override based on mode - match edit mode styling
                         var overrideSettings = new OverrideGraphicSettings();
                         if (circuitManager.Mode == "main")
                         {
                             overrideSettings.SetProjectionLineColor(new Color(0, 255, 0)); // Green color for main branch
-                            overrideSettings.SetHalftone(true);
+                            overrideSettings.SetProjectionLineWeight(5); // Thicker lines like edit mode
+                            overrideSettings.SetHalftone(false); // Make them stand out like edit mode
                             circuitManager.AddDeviceToMain(elementId, deviceData);
                         }
                         else // branch mode
                         {
                             overrideSettings.SetProjectionLineColor(new Color(255, 128, 0)); // Orange color for T-tap
-                            overrideSettings.SetHalftone(true);
+                            overrideSettings.SetProjectionLineWeight(5); // Thicker lines like edit mode
+                            overrideSettings.SetHalftone(false); // Make them stand out like edit mode
                             circuitManager.AddDeviceToBranch(elementId, deviceData);
                         }
                         activeView.SetElementOverrides(elementId, overrideSettings);
+                        
+                        // Apply wire overrides if circuit manager has created wires
+                        ApplyWireOverrides(doc, activeView, circuitManager);
 
                         trans.Commit();
                     }
@@ -391,6 +414,78 @@ namespace FireAlarmCircuitAnalysis
                 System.Diagnostics.Debug.WriteLine($"ExtractCurrentValue failed: {ex.Message}");
             }
             return 0.0;
+        }
+
+        private void ApplyWireOverrides(Document doc, View activeView, CircuitManager circuitManager)
+        {
+            try
+            {
+                // Apply visual overrides to all created wires - same as edit mode
+                foreach (var wireId in circuitManager.CreatedWires)
+                {
+                    if (wireId != ElementId.InvalidElementId)
+                    {
+                        try
+                        {
+                            var wire = doc.GetElement(wireId) as Wire;
+                            if (wire != null)
+                            {
+                                // Store original override if not already stored
+                                if (!circuitManager.OriginalWireOverrides.ContainsKey(wireId))
+                                {
+                                    var original = activeView.GetElementOverrides(wireId);
+                                    circuitManager.OriginalWireOverrides[wireId] = original;
+                                }
+
+                                // Apply wire override - same as edit mode
+                                var wireOverride = new OverrideGraphicSettings();
+                                
+                                // Check if wire connects to a branch device to determine color
+                                bool isBranchWire = false;
+                                var wireConnectors = wire.ConnectorManager?.Connectors;
+                                if (wireConnectors != null)
+                                {
+                                    foreach (Connector conn in wireConnectors)
+                                    {
+                                        foreach (Connector refConn in conn.AllRefs)
+                                        {
+                                            var ownerId = refConn.Owner.Id;
+                                            if (circuitManager.Branches.Any(b => b.Value.Contains(ownerId)))
+                                            {
+                                                isBranchWire = true;
+                                                break;
+                                            }
+                                        }
+                                        if (isBranchWire) break;
+                                    }
+                                }
+                                
+                                // Apply color based on circuit type - same as edit mode
+                                if (isBranchWire)
+                                {
+                                    wireOverride.SetProjectionLineColor(new Color(255, 128, 0)); // Orange for branch wires
+                                }
+                                else
+                                {
+                                    wireOverride.SetProjectionLineColor(new Color(0, 255, 0)); // Green for main circuit wires
+                                }
+                                
+                                wireOverride.SetProjectionLineWeight(5);
+                                wireOverride.SetHalftone(false);
+                                activeView.SetElementOverrides(wireId, wireOverride);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Failed to override wire {wireId} in selection mode: {ex.Message}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ApplyWireOverrides failed in selection mode: {ex.Message}");
+            }
         }
 
         public string GetName() => "Fire Alarm Device Selection";
